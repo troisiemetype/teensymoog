@@ -1,0 +1,34 @@
+0		5V
+1		GND
+2		modulation mix
+3		glide
+4		osc1 range
+5		osc2 range
+6		osc3 range
+7		osc1 waveform
+8		osc2 waveform
+9		osc3 waveform
+10		osc1 mix
+11		osc2 mix
+12		osc3 mix
+13		noise mix
+14		feedback mix
+15		modulation mix 1
+16		modulation mix 2
+17		osc modulation
+18		osc3 ctrl
+19		transpose +
+20		transpose -
+21		osc1 mix sw
+22		osc2 mix sw
+23		osc3 mix sw
+24		noise mix sw
+25		feedback mix sw
+26		noise color
+27		mega 2 rx from teensy
+28		mega 2 tx to teensy
+29		mega 2 reset
+30		
+31		
+32		
+33		
