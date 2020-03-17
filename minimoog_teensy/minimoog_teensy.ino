@@ -65,7 +65,10 @@ const float NOTE_RATIO = 1.0594630943593;
 const float HALFTONE_TO_DC = (float)1 / (MAX_OCTAVE * 12);
 const float FILTER_HALFTONE_TO_DC = (float)1 / (FILTER_MAX_OCTAVE * 12);
 
-const float MAX_MIX = 0.9;
+const float FILTER_BASE_FREQUENCY = 440.0;
+const float FILTER_BASE_NOTE = (log(FILTER_BASE_FREQUENCY / NOTE_MIDI_0)) / (log(NOTE_RATIO));
+
+const float MAX_MIX = 1.0;
 
 const uint16_t RESO = 1024;
 const uint16_t HALF_RESO = RESO / 2;
@@ -183,9 +186,9 @@ void setup() {
 
 	// amp
 	ampPitchBend.gain(3 * HALFTONE_TO_DC * 2);
-	ampModWheel.gain(0);
+	ampModWheel.gain(0.0);
 	ampPreFilter.gain(1.0);
-	ampModEg.gain(0.01);
+	ampModEg.gain(0.1);
 	ampOsc3Mod.gain(1);
 
 	osc1Waveform.frequencyModulation(MAX_OCTAVE);
@@ -243,7 +246,7 @@ void setup() {
 	bandMixer.gain(1, 0);
 
 	// filter
-	vcf.frequency(640);
+	vcf.frequency(FILTER_BASE_FREQUENCY);
 	vcf.resonance(0.7);
 	vcf.octaveControl(FILTER_MAX_OCTAVE);
 
@@ -280,7 +283,7 @@ void loop() {
 void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
 	float duration = (float)glideEn * (float)glide * 3.75;
 	float level = ((float)note + 12 * transpose) * HALFTONE_TO_DC;
-	float filterLevel = ((float)note + 12 * transpose) * FILTER_HALFTONE_TO_DC;
+	float filterLevel = (((float)note - FILTER_BASE_NOTE) + (12 * transpose)) * FILTER_HALFTONE_TO_DC;
 
 	AudioNoInterrupts();
 	dcKeyTrack.amplitude(level, duration);
@@ -563,7 +566,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_FILTER_CUTOFF_FREQ_LSB:
 		// CC_52
-			dcFilter.amplitude(((float)longValue - HALF_RESO) / RESO);
+			dcFilter.amplitude(((float)longValue - HALF_RESO) / HALF_RESO);
 			break;
 		case CC_FILTER_EMPHASIS_LSB:
 		// CC_53
@@ -672,7 +675,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			} else {
 				filterKeyTrack1 = 0;
 			}
-			filterMixer.gain(3, (filterKeyTrack1 * 0.333 + filterKeyTrack2 * 0.667));
+			filterMixer.gain(3, ((float)filterKeyTrack1 * 0.333333 + (float)filterKeyTrack2 * 0.666667));
 			break;
 		case CC_FILTER_KEYTRACK_2:
 		// CC_111
@@ -681,7 +684,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			} else {
 				filterKeyTrack2 = 0;
 			}
-			filterMixer.gain(3, (filterKeyTrack1 * 0.333 + filterKeyTrack2 * 0.667));
+			filterMixer.gain(3, ((float)filterKeyTrack1 * 0.333333 + (float)filterKeyTrack2 * 0.666667));
 			break;
 		case CC_TRANSPOSE:
 		// CC_112

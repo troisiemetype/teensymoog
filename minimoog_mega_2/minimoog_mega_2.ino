@@ -64,7 +64,7 @@
 // Constants
 const uint8_t NUM_SWITCHES = 3;
 const uint8_t NUM_POTS = 15;
-const uint8_t POT_FILTER_COEF = 10;
+const uint8_t POT_FILTER_COEF = 15;
 
 // Note : pins are defined via tables, to improve code efficiency.
 // Digital pin definition
