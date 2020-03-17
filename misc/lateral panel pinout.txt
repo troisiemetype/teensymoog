@@ -1,0 +1,9 @@
+0		GND
+1		5V
+2		pitch bend
+3		mod wheel
+4		LFO rate
+5		glide
+6		LFO shape
+7		function
+8		not used

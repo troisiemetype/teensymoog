@@ -52,8 +52,6 @@
  * Communication
  *					TX1 to teensy					18
  *					RX1 from teensy					19
- *					TX2 to mega 1					16
- *					RX2 from mega 1					17
  */
 
 // includes
@@ -68,12 +66,16 @@ const uint8_t NUM_SWITCHES = 3;
 const uint8_t NUM_POTS = 15;
 const uint8_t POT_FILTER_COEF = 10;
 
+// Note : pins are defined via tables, to improve code efficiency.
 // Digital pin definition
+
 const uint8_t PIN_FILTER_MOD = 2;
+/*
 const uint8_t PIN_KEYBOARD_CTRL_1 = 3;
 const uint8_t PIN_KEYBOARD_CTRL_2 = 4;
-
+*/
 // Analog pin definition
+/*
 const uint8_t APIN_GLOBAL_TUNE = A0;
 const uint8_t APIN_OSC2_TUNE = A1;
 const uint8_t APIN_OSC3_TUNE = A2;
@@ -89,11 +91,12 @@ const uint8_t APIN_ATTACK = A11;
 const uint8_t APIN_DECAY = A12;
 const uint8_t APIN_SUSTAIN = A13;
 const uint8_t APIN_RELEASE = A14;
+*/
 
-const uint8_t apin[NUM_POTS] = {A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14};
+const uint8_t APIN[NUM_POTS] = {A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14};
 
 // Variables
-uint16_t potState[NUM_POTS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+uint16_t potState[NUM_POTS];
 
 PushButton switches[NUM_SWITCHES];
 ExpFilter pots[NUM_POTS];
@@ -118,7 +121,7 @@ void setup(){
 	}
 
 	for (uint8_t i = 0; i < NUM_POTS; ++i){
-		pots[i].begin(analogRead(apin[i]));
+		pots[i].begin(analogRead(APIN[i]));
 		pots[i].setCoef(POT_FILTER_COEF);
 	}
 
@@ -139,7 +142,7 @@ void updateControls(){
 	for(uint8_t i = 0; i < NUM_POTS; ++i){
 		uint16_t value = 0;
 
-		value = pots[i].filter(analogRead(apin[i]));
+		value = pots[i].filter(analogRead(APIN[i]));
 		if((value != potState[i]) || update){
 			potState[i] = value;
 		} else {
@@ -147,7 +150,7 @@ void updateControls(){
 			continue;				
 		}
 
-		uint8_t controlChange = 0;
+		int8_t controlChange = -1;
 
 		switch(i){
 			case 0:
@@ -157,6 +160,9 @@ void updateControls(){
 				controlChange = CC_OSC2_TUNE;
 				break;
 			case 2:
+			// This one has a problem : sends CC10 (instead of CC13) then CC45 as should be.
+			// or maybe pure data has a bug that shifts bits.
+			// It seems it's a bug of pure data : 13 are replaced by 10 also for values...
 				controlChange = CC_OSC3_TUNE;
 				break;
 			case 3:
@@ -199,6 +205,7 @@ void updateControls(){
 				continue;
 
 		}
+
 		uint8_t valueHigh = value >> 7;
 		uint8_t valueLow = value & 0x7F;
 		midi1.sendControlChange(controlChange, valueHigh, 1);
@@ -223,7 +230,7 @@ void updateSwitches(){
 			continue;
 		}
 
-		uint8_t controlChange = 0;
+		int8_t controlChange = -1;
 
 		switch(i){
 			case 0:

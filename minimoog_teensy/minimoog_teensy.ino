@@ -24,6 +24,24 @@
  * All user inputs are handled and send to the teensy board using midi commands
  */
 
+ /*
+  * Pinout
+  *
+  * RX from mega 1 (through tension divider) 		0
+  * TX to mega 1 (serial 1)							1
+  * mega 1 reset 									2
+  * 	
+  * RX from mega 2 (through tension divider) 		16
+  * TX to mega 2 (serial 4)							17
+  * mega 2 reset 									18
+  * 	
+  * I2S OUT1A 										7
+  * I2S LRCLK1										20
+  * I2S BCLK1 										21
+  *
+  * D+ & D- are also used to break the USB port to the rear panel
+  */
+
 #include <Audio.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -33,7 +51,7 @@
 #include "audio_setup.h"
 #include "defs.h"
 
-//#include "MIDI.h"
+#include "MIDI.h"
 
 // constants
 const uint8_t KEYTRACK_MAX = 10;
@@ -47,13 +65,27 @@ const float NOTE_RATIO = 1.0594630943593;
 const float HALFTONE_TO_DC = (float)1 / (MAX_OCTAVE * 12);
 const float FILTER_HALFTONE_TO_DC = (float)1 / (FILTER_MAX_OCTAVE * 12);
 
-const float MAX_MIX = 0.8;
+const float MAX_MIX = 0.9;
+
+const uint16_t RESO = 1024;
+const uint16_t HALF_RESO = RESO / 2;
+
+const int16_t PITCH_BEND_MIN = -168;
+const int16_t PITCH_BEND_MAX = 134;
+const int16_t PITCH_BEND_NEUTRAL = PITCH_BEND_MIN + (PITCH_BEND_MAX - PITCH_BEND_MIN) / 2;
+const int16_t PITCH_BEND_COURSE = PITCH_BEND_MAX - PITCH_BEND_MIN;
+
+const uint16_t MOD_WHEEL_MIN = 360;
+const uint16_t MOD_WHEEL_MAX = 666;
+const uint16_t MOD_WHEEL_NEUTRAL = MOD_WHEEL_MIN + (MOD_WHEEL_MAX - MOD_WHEEL_MIN) / 2;
+const uint16_t MOD_WHEEL_COURSE = MOD_WHEEL_MAX - MOD_WHEEL_MIN;
+
+const uint8_t MEGA1_RST = 2;
+const uint8_t MEGA2_RST = 18;
 
 // variables
 
 uint8_t midiChannel = 1;
-
-int8_t transposeOffset = 5;
 
 uint16_t glide = 0;
 bool glideEn  = 0;
@@ -80,6 +112,9 @@ uint8_t waveforms[6] = {WAVEFORM_SINE, WAVEFORM_TRIANGLE, WAVEFORM_SAWTOOTH,
 uint8_t keyTrackIndex = 0;
 uint8_t keyTrack[KEYTRACK_MAX] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
+// double CC track
+uint8_t ccTempValue[32];
+
 enum keyMode_t{
 	KEY_FIRST = 0,
 	KEY_LAST,
@@ -89,24 +124,48 @@ enum keyMode_t{
 
 keyMode_t keyMode = KEY_LAST;
 
+struct midiSettings : public midi::DefaultSettings{
+//	static const bool UseRunningStatus = true;
+	static const long BaudRate = 115200;
+};
 
-//MIDI_CREATE_DEFAULT_INSTANCE();
-//MIDI_CREATE_INSTANCE(UsbTransport, sUsbTransport, usbMIDI);
+// The one we use on synth
+MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial1, midi1, midiSettings);
+MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial4, midi2, midiSettings);
 
 
 void setup() {
 
-	// midi settings, start and callback	usbMIDI.begin(1);	usbMIDI.setHandleNoteOn(handleNoteOn)	usbMIDI.setHandleNoteOff(handleNoteOff)	usbMIDI.setHandlePitchBend(handlePitchBend)	usbMIDI.setHandleControlChange(handleControlChange);
+	// Mega resets
+	pinMode(MEGA1_RST, OUTPUT);
+	pinMode(MEGA2_RST, OUTPUT);
+	digitalWrite(MEGA1_RST, 0);
+	digitalWrite(MEGA2_RST, 0);
 
-	usbMIDI.setHandleNoteOn(handleNoteOn);
-	usbMIDI.setHandleNoteOff(handleNoteOff);
-	usbMIDI.setHandlePitchChange(handlePitchBend);
-	usbMIDI.setHandleControlChange(handleControlChange);
+	// midi settings, start and callback
+	midi1.begin(1);
+	midi1.turnThruOff();
+	midi1.setHandleNoteOn(handleNoteOn);
+	midi1.setHandleNoteOff(handleNoteOff);
+	midi1.setHandlePitchBend(handlePitchBend);
+	midi1.setHandleControlChange(handleControlChange);
 
+	midi2.begin(1);
+	midi2.turnThruOff();
+	midi2.setHandleControlChange(handleControlChange);
+
+/*
 	Serial.begin(115200);
-//	Serial.println("started...");
-
+	Serial.println("started...");
+*/
 	AudioMemory(200);
+
+	digitalWrite(MEGA1_RST, 1);
+	digitalWrite(MEGA2_RST, 1);
+	delay(500);
+
+	midi1.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
+	midi2.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
 
 	// audio settings
 	// dc
@@ -122,11 +181,10 @@ void setup() {
 	dcOsc3Tune.amplitude(0.0);
 	dcPulse.amplitude(-0.95);
 
-
 	// amp
 	ampPitchBend.gain(3 * HALFTONE_TO_DC * 2);
 	ampModWheel.gain(0);
-	ampPreFilter.gain(0.7);
+	ampPreFilter.gain(1.0);
 	ampModEg.gain(0.01);
 	ampOsc3Mod.gain(1);
 
@@ -207,18 +265,22 @@ void setup() {
 	bitCrushOutput.bits(16);
 	bitCrushOutput.sampleRate(44100.0);
 
-	usbMIDI.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
+	delay(500);
+
+	midi1.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
+	midi2.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
 
 }
 
 void loop() {
-	usbMIDI.read();
+	midi1.read();
+	midi2.read();
 }
 
 void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
-	float duration = (float)glideEn * (float)glide * 30.0;
-	float level = (float)note * HALFTONE_TO_DC;
-	float filterLevel = (float)note * FILTER_HALFTONE_TO_DC;
+	float duration = (float)glideEn * (float)glide * 3.75;
+	float level = ((float)note + 12 * transpose) * HALFTONE_TO_DC;
+	float filterLevel = ((float)note + 12 * transpose) * FILTER_HALFTONE_TO_DC;
 
 	AudioNoInterrupts();
 	dcKeyTrack.amplitude(level, duration);
@@ -265,6 +327,11 @@ int8_t keyTrackRemoveNote(uint8_t note){
 }
 
 void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
+/*
+	Serial.print("note ");
+	Serial.print(note);
+	Serial.println(" on");
+*/
 	switch(keyMode){
 		// When KEY_FIRST, we play the note only if there is not one already playing
 		case KEY_FIRST:
@@ -294,6 +361,11 @@ void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 }
 
 void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
+/*
+	Serial.print("note ");
+	Serial.print(note);
+	Serial.println(" off");
+*/
 	switch(keyMode){
 		case KEY_FIRST:
 /*			if(keyTrackRemoveNote(note) == 0){
@@ -318,185 +390,228 @@ void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 }
 
 void handlePitchBend(uint8_t channel, int16_t bend){
-	dcPitchBend.amplitude(((float)bend - 64) / 128);
+	dcPitchBend.amplitude(((float)bend - PITCH_BEND_NEUTRAL) / PITCH_BEND_COURSE);
+	// Pitch bend goes from -168 to 134.
+	// neutral at -11 from up, -24 from down. :/
+/*
+	Serial.print("pitch bend :");
+	Serial.println(bend);
+*/
 }
 
 void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
-	//	Serial.println("control change");
+/*
+	Serial.print("control change ");
+	Serial.println(command);
+*/
+	uint16_t longValue = 0;
+	if(command < 32){
+		ccTempValue[command] = value;
+/*
+		Serial.print("value : ");
+		Serial.print(value << 7);
+		Serial.print(" (sent : ");
+		Serial.print(value);
+		Serial.println(')');
+*/
+	} else if(command < 64){
+		longValue = (uint16_t)ccTempValue[command - 32];
+		longValue <<= 7;
+		longValue += value;
+/*
+		Serial.print("value : ");
+		Serial.print(longValue);
+		Serial.print(" (sent : ");
+		Serial.print(value);
+		Serial.println(')');
+*/
+	} else {
+/*
+		Serial.print("value : ");
+		Serial.println(value);		
+*/
+	}
 	switch(command){
-		case CC_MOD_WHEEL:						// CC_1
-			ampModWheel.gain((float)value / 12 / 127);
+		case CC_MOD_WHEEL:
+		// CC_1
 			break;
-		case CC_MODULATION_MIX:					// CC_3
-			AudioNoInterrupts();
-			modMixer.gain(0, (float)value / 127);
-			modMixer.gain(1, (127 - (float)value) / 127);
-			AudioInterrupts();
+		case CC_MODULATION_MIX:
+		// CC_3
 			break;
 		case CC_PORTAMENTO_TIME:
 		// CC_5
-			glide = value;
 			break;
 		case CC_OSC_TUNE:
 		// CC_9
-			dcOscTune.amplitude(HALFTONE_TO_DC * 2 * ((float)value - 64) / 127);
 			break;
 		case CC_OSC2_TUNE:
 		// CC_12
-			dcOsc2Tune.amplitude(HALFTONE_TO_DC * 12 * 2 * ((float)value - 64) / 127);
 			break;
 		case CC_OSC3_TUNE:
 		// CC_13
-			dcOsc3Tune.amplitude(HALFTONE_TO_DC * 12 * 2 * ((float)value - 64) / 127);
 			break;
 		case CC_OSC1_MIX:
 		// CC_14
-			oscMixer.gain(0, MAX_MIX * (float)value / 127);
 			break;
 		case CC_OSC2_MIX:
 		// CC_15
-			oscMixer.gain(1, MAX_MIX * (float)value / 127);
 			break;
 		case CC_OSC3_MIX:
 		// CC_16
-			oscMixer.gain(2, MAX_MIX * (float)value / 127);
 			break;
 		case CC_NOISE_MIX:
 		// CC_17
-			oscMixer.gain(3, MAX_MIX * (float)value / 127);
 			break;
 		case CC_FEEDBACK_MIX:
 		// CC_18
-			globalMixer.gain(1, MAX_MIX * (float)value / 127);
 			break;
 		case CC_FILTER_BAND:
 		// CC_19
-			AudioNoInterrupts();
-			bandMixer.gain(0, ((float)value - 127) / 127);
-			bandMixer.gain(1, (float)value / 127);
-			AudioInterrupts();
 			break;
 		case CC_FILTER_CUTOFF_FREQ:
 		// CC_20
 //			vcf.frequency((float)value * 32);
-			dcFilter.amplitude(((float)value - 64) / 127);
 			break;
 		case CC_FILTER_EMPHASIS:
 		// CC_21
-			vcf.resonance(0.7 + (float)value / 29.53);
 			break;
 		case CC_FILTER_CONTOUR:
 		// CC_22
-			filterMixer.gain(1, (float)value / 127);
+			break;
 		case CC_FILTER_ATTACK:
 		// CC_23
-			filterEnvelope.attack((float)value * 40);
 			break;
 		case CC_FILTER_DECAY:
 		// CC_24
-			filterDecay = value * 40;
-			AudioNoInterrupts();
-			filterEnvelope.decay(filterDecay);
-			if(decay) filterEnvelope.release(filterDecay);
-			AudioInterrupts();
 			break;
 		case CC_FILTER_SUSTAIN:
 		// CC_25
-			filterEnvelope.sustain((float)value / 127);
 			break;
 		case CC_FILTER_RELEASE:
 		// CC_26
-			filterEnvelope.release((float)value / 127);
 			break;
 		case CC_EG_ATTACK:
 		// CC_27
-			mainEnvelope.attack((float)value * 40);
 			break;
 		case CC_EG_DECAY:
 		// CC_28
-			egDecay = value * 40;
-			AudioNoInterrupts();
-			mainEnvelope.decay(egDecay);
-			if(decay) mainEnvelope.release(egDecay);
-			AudioInterrupts();
 			break;
 		case CC_EG_SUSTAIN:
 		// CC_29
-			mainEnvelope.sustain((float)value / 127);
 			break;
 		case CC_LFO_RATE:
 		// CC_31
-			dcLfoFreq.amplitude((float)value / 127);
 			break;
 		case CC_MOD_WHEEL_LSB:
 		// CC_33
+			ampModWheel.gain(((float)longValue - 1 - MOD_WHEEL_MIN) / 12 / MOD_WHEEL_COURSE);
+			// Mod wheel goes from 360 to 666.
+/*
+			Serial.print("mod wheel : ");
+			Serial.println(longValue);
+*/
 			break;
 		case CC_MODULATION_MIX_LSB:
 		// CC_35
+			AudioNoInterrupts();
+			modMixer.gain(0, (float)longValue / RESO);
+			modMixer.gain(1, (RESO - (float)longValue) / RESO);
+			AudioInterrupts();
 			break;
 		case CC_PORTAMENTO_TIME_LSB:
 		// CC_37
+			glide = longValue;
 			break;
 		case CC_OSC_TUNE_LSB:
 		// CC_41
+			dcOscTune.amplitude(HALFTONE_TO_DC * 2 * ((float)longValue - HALF_RESO) / RESO);
 			break;
 		case CC_OSC2_TUNE_LSB:
 		// CC_44
+			dcOsc2Tune.amplitude(HALFTONE_TO_DC * 12 * 2 * ((float)longValue - HALF_RESO) / RESO);
 			break;
 		case CC_OSC3_TUNE_LSB:
 		// CC_45
+			dcOsc3Tune.amplitude(HALFTONE_TO_DC * 12 * 2 * ((float)longValue - HALF_RESO) / RESO);
 			break;
 		case CC_OSC1_MIX_LSB:
 		// CC_46
+			oscMixer.gain(0, MAX_MIX * (float)longValue / RESO);
 			break;
 		case CC_OSC2_MIX_LSB:
 		// CC_47
+			oscMixer.gain(1, MAX_MIX * (float)longValue / RESO);
 			break;
 		case CC_OSC3_MIX_LSB:
 		// CC_48
+			oscMixer.gain(2, MAX_MIX * (float)longValue / RESO);
 			break;
 		case CC_NOISE_MIX_LSB:
 		// CC_49
+			oscMixer.gain(3, MAX_MIX * (float)longValue / RESO);
 			break;
 		case CC_FEEDBACK_MIX_LSB:
 		// CC_50
+			globalMixer.gain(1, MAX_MIX * (float)longValue / RESO);
 			break;
 		case CC_FILTER_BAND_LSB:
 		// CC_51
+			AudioNoInterrupts();
+			bandMixer.gain(0, ((float)longValue - RESO) / RESO);
+			bandMixer.gain(1, (float)longValue / RESO);
+			AudioInterrupts();
 			break;
 		case CC_FILTER_CUTOFF_FREQ_LSB:
 		// CC_52
+			dcFilter.amplitude(((float)longValue - HALF_RESO) / RESO);
 			break;
 		case CC_FILTER_EMPHASIS_LSB:
 		// CC_53
+			vcf.resonance(0.7 + (float)longValue / 237.90);
 			break;
 		case CC_FILTER_CONTOUR_LSB:
 		// CC_54
+			filterMixer.gain(1, (float)longValue / RESO);
 			break;
 		case CC_FILTER_ATTACK_LSB:
 		// CC_55
+			filterEnvelope.attack((float)longValue * 5.0);
 			break;
 		case CC_FILTER_DECAY_LSB:
 		// CC_56
+			filterEnvelope.decay((float)longValue * 5.0);
 			break;
 		case CC_FILTER_SUSTAIN_LSB:
 		// CC_57
+			filterEnvelope.sustain((float)longValue / RESO);
+			break;
+		case CC_FILTER_RELEASE_LSB:
+		// CC_58
+			filterEnvelope.release((float)longValue * 5.0);
 			break;
 		case CC_EG_ATTACK_LSB:
-		// CC_58
+		// CC_59
+			mainEnvelope.attack((float)longValue * 5.0);
 			break;
 		case CC_EG_DECAY_LSB:
-		// CC_59
+		// CC_60
+			mainEnvelope.decay((float)longValue * 5.0);
 			break;
 		case CC_EG_SUSTAIN_LSB:
-		// CC_60
+		// CC_61
+			mainEnvelope.sustain((float)longValue / RESO);
+			break;
+		case CC_EG_RELEASE_LSB:
+		// CC_62
+			mainEnvelope.release((float)longValue * 5.0);
 			break;
 		case CC_LFO_RATE_LSB:
-		// CC_62
+		// CC_63
+			dcLfoFreq.amplitude((float)longValue / RESO);
 			break;
 		case CC_PORTAMENTO_ON_OFF:
 		// CC_65
-			if(value > 63){
+			if(value < 64){
 				glideEn = 1;
 			} else {
 				glideEn = 0;
@@ -608,6 +723,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 				mainTuneMixer.gain(3, 0);
 			}
 			break;
+/*
 		case CC_DECAY_SW:
 		// CC_116
 			AudioNoInterrupts();
@@ -622,6 +738,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			}
 			AudioInterrupts();
 			break;
+*/
 		case CC_MOD_MIX_1:
 		// CC_117
 			AudioNoInterrupts();
@@ -646,12 +763,21 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			}
 			AudioInterrupts();
 			break;
-/*		case CC_LFO_SHAPE:						// CC_119
+		case CC_LFO_SHAPE:
+		// CC_119
+			AudioNoInterrupts();
 			if(value > 63){
+				lfoWaveform.begin(WAVEFORM_TRIANGLE);
+				lfoWaveform.offset(0.0);
+				lfoWaveform.amplitude(1.0);
 			} else {
+				lfoWaveform.begin(WAVEFORM_SQUARE);
+				lfoWaveform.offset(0.5);
+				lfoWaveform.amplitude(0.5);
 			}
+			AudioInterrupts();
 			break;
-*/		default:
+		default:
 			break;
 	}
 }

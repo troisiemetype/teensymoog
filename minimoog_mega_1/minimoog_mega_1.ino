@@ -36,17 +36,17 @@
  *					glide				pot			A2				CC  5
  *					pitchbend wheel		pot			A3				pitchbend change
  *					modulation wheel	pot			A4 				CC  1
- *					modulation mix 1	switch 		2				CC 117
- *					modulation mix 2 	switch 		3				CC 118
+ *					modulation mix 1	switch 		3				CC 117
+ *					modulation mix 2 	switch 		2				CC 118
  *					osc modulation 		switch 		4 				CC 115
  *					glide				switch 		5				CC 65
  *					LFO waveform		switch 		6				CC 119
  * Oscillators
  *					osc 1 range			switch 		A5 				CC 102
- *					osc 1 waveform		switch 		A6 				CC 103
- *					osc 2 range			switch 		A7				CC 104
- *					osc 2 waveform		switch 		A8 				CC 105
- *					osc 3 range			switch 		A9 				CC 106
+ *					osc 1 waveform		switch 		A8 				CC 103
+ *					osc 2 range			switch 		A6				CC 104
+ *					osc 2 waveform		switch 		A9 				CC 105
+ *					osc 3 range			switch 		A7 				CC 106
  *					osc 3 waveform		switch 		A10 			CC 107
  *					osc 3 control		switch 		7 				CC 108
  * Mixer
@@ -54,31 +54,39 @@
  *					osc 2 mix 			pot			A12				CC 86
  *					osc 3 mix 			pot			A13				CC 87
  *					noise mix 			pot			A14				CC 88
- *					external mix 		pot			A15				CC 89
+ *					feedback mix 		pot			A15				CC 89
  *					osc 1				switch 		8 				Directly added to mix
  *					osc 2				switch 		9				ditto
  *					osc 3				switch 		10				ditto
  *					noise				switch 		11				ditto
- *					external			switch 		12				ditto
- *					noise color			switch 		13				CC 114
+ *					feedback			switch 		12				ditto
+ *					noise color			switch 		17				CC 114 // led on 13 lowers tension
  * Other
  *					function			switch 		14 				CC 113
- *					transpose +			switch 		52 				CC 112
- *					transpose -			switch 		53				CC 112
+ *					transpose +			switch 		15 				CC 112
+ *					transpose -			switch 		16				CC 112
  * Communication
- *					TX1 to mega 2					18
- *					RX1 from mega 2					19
+ *					TX1 to teensy					18
+ *					RX1 from teensy					19
  */
 
 // includes
 #include "MIDI.h"
 #include "PushButton.h"
+#include "ExpFilter.h"
+#include "defs.h"
 
 // Constants
 const uint8_t NUM_KEYS = 30;
-const uint8_t MIDI_OFFSET = 23; // to be modified
-// Digital pin definition
+const uint8_t MIDI_OFFSET = 47; // to be maybe modified
 
+const uint8_t NUM_SWITCHES = 15;
+const uint8_t NUM_POTS = 16;
+const uint8_t NUM_SELECTORS = 6;
+
+const uint8_t POT_FILTER_COEF = 15;
+
+// Digital pin definition
 const uint8_t KEYS[NUM_KEYS] = {
 	22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
 	34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
@@ -86,25 +94,27 @@ const uint8_t KEYS[NUM_KEYS] = {
 };
 
 PushButton keys[NUM_KEYS];
-
+/*
 const uint8_t PIN_MOD_MIX_1 = 2;
 const uint8_t PIN_MOD_MIX_2 = 3;
 const uint8_t PIN_OSC_MOD = 4;
 const uint8_t PIN_GLIDE = 5;
-const uint8_t PIN_DECAY = 6;
-const uint8_t PIN_LFO_WAVEFORM = 7;
+const uint8_t PIN_LFO_WAVEFORM = 6;
+const uint8_t PIN_OSC3_CTRL = 7;
 
-const uint8_t PIN_MIX_OSC_1 = 9;
-const uint8_t PIN_MIX_OSC_2 = 10;
-const uint8_t PIN_MIX_OSC_3 = 11;
-const uint8_t PIN_MIX_OSC_NOISE = 12;
-const uint8_t PIN_MIX_OSC_EXT = 13;
-const uint8_t PIN_MIX_OSC_NOISE_COLOR = 14;
+const uint8_t PIN_MIX_OSC_1 = 8;
+const uint8_t PIN_MIX_OSC_2 = 9;
+const uint8_t PIN_MIX_OSC_3 = 10;
+const uint8_t PIN_MIX_OSC_NOISE = 11;
+const uint8_t PIN_MIX_OSC_EXT = 12;
+const uint8_t PIN_MIX_OSC_NOISE_COLOR = 13;
+const uint8_t PIN_FUNCTION = 14;
 
 const uint8_t PIN_TRANSPOSE_PLUS = 52;
 const uint8_t PIN_TRANSPOSE_MINUS = 53;
-
+*/
 // Analog pin definition
+/*
 const uint8_t APIN_LFO_RATE = A0;
 const uint8_t APIN_MOD_MIX = A1;
 const uint8_t APIN_GLIDE = A2;
@@ -123,49 +133,27 @@ const uint8_t APIN_MIX_OSC_2 = A12;
 const uint8_t APIN_MIX_OSC_3 = A13;
 const uint8_t APIN_MIX_NOISE = A14;
 const uint8_t APIN_MIX_EXT = A15;
+*/
 
+const uint8_t APIN[NUM_POTS] = {A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15};
 
 // Vars
+uint16_t potState[NUM_POTS];
+
+const uint8_t PIN[NUM_SWITCHES] = {3, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17, 14, 15, 16};
+
+PushButton switches[NUM_SWITCHES];
+ExpFilter pots[NUM_POTS];
+uint8_t selectors[NUM_SELECTORS];
+
 // Keyboard
-bool keyState[NUM_KEYS] = {};
-
-// Modulation
-uint16_t lfoRate = 0;
-uint16_t modMix = 0;
-uint16_t glide = 0;
-uint16_t pitchWheel = 0;
-uint16_t modWheel = 0;
-bool modMix1 = 0;
-bool modMix2 = 0;
-bool oscMod = 0;
-bool glideEn = 0;
-bool decayEn = 0;
-bool lfoWaveform = 0;
-
-// Oscillators
-uint8_t osc1Range = 0;
-uint8_t osc1Waveform = 0;
-uint8_t osc2Range = 0;
-uint8_t osc2Waveform = 0;
-uint8_t osc3Range = 0;
-uint8_t osc3Waveform = 0;
-bool osc3Control = 0;
+bool keyState[NUM_KEYS];
 
 // Mixer
-uint16_t osc1Mix = 0;
-uint16_t osc2Mix = 0;
-uint16_t osc3Mix = 0;
-uint16_t feedbackMix = 0;
-uint16_t noiseMix = 0;
-bool osc1MixSw = 0;
-bool osc2MixSw = 0;
-bool osc3MixSw = 0;
-bool feedbackMixSw = 0;
-bool noiseMixSw = 0;
+uint16_t mix[5];
+bool mixSw[5];
 
-// Miscellaneous
-bool function = 0;
-
+// Misc
 uint8_t defaultVelocity = 96;
 
 bool update = 0;
@@ -176,44 +164,60 @@ struct midiSettings : public midi::DefaultSettings{
 };
 
 // The one we use on synth
-//MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial1, midi1, midiSettings);
+MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial1, midi1, midiSettings);
 // For debug purposes
-MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial, midi1, midiSettings);
+//MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial, midi1, midiSettings);
 
 void setup(){
 	// initialisation
-	// Serial is for debug
-	//Serial.begin(115200);
 
 	midi1.setHandleControlChange(handleControlChange);
 	midi1.begin(1);
-	// Serial 1 is for sending and receiving messages to and from Teensy
-//	Serial1.begin(115200);
-	// Serial 2 is for sending and receiving messages to and from Mega 2
-//	Serial2.begin(115200);
-	// keys
-	/*
-	for(uint8_t i = 0; i < NUM_KEYS; ++i){
-		keyState[i] = 0;
-		pinMode(KEYS[i], INPUT_PULLUP);
-	}
-	*/
+	midi1.turnThruOff();
 
+
+	// Key initialisation
 	for(uint8_t i = 0; i < NUM_KEYS; ++i){
 		keys[i].begin(KEYS[i], INPUT_PULLUP);
-		keys[i].setDebounceDelay(1);
+		keys[i].setDebounceDelay(12);
 	}
 
+	// Switches initialisation
+	for(uint8_t i = 0; i < NUM_SWITCHES; ++i){
+		switches[i].begin(PIN[i], INPUT_PULLUP);
+		switches[i].setDebounceDelay(1);
+	}
 
+	// potentiometers initialisation
+	for (uint8_t i = 0; i < NUM_POTS; ++i){
+		pots[i].begin(analogRead(APIN[i]));
+		pots[i].setCoef(POT_FILTER_COEF);
+	}
 
 }
 
 void loop(){
 	midi1.read();
 	updateKeys();
-	updateControls();
 	updateSwitches();
+	updateControls();
 	update = 0;
+}
+
+void sendLongControlChange(uint8_t controlChange, uint16_t value, uint8_t channel = 1){
+	uint8_t valueHigh = value >> 7;
+	uint8_t valueLow = value & 0x7F;
+	midi1.sendControlChange(controlChange, valueHigh, channel);
+	midi1.sendControlChange(controlChange + 32, valueLow, channel);
+}
+
+void updateMix(uint8_t ch, bool fromSw = 0){
+	uint16_t value = 0;
+	if(mixSw[ch]){
+		value = mix[ch];
+	}
+	if(value || fromSw) sendLongControlChange(CC_OSC1_MIX + ch, value, 1);
+
 }
 
 void updateKeys(){
@@ -248,13 +252,228 @@ void updateKeys(){
 
 }
 
-void updateControls(){
+void updateSwitches(){
+	for(uint8_t i = 0; i < NUM_SWITCHES; ++i){
+		uint8_t change = 0;
+		switches[i].update();
 
+		if(switches[i].justPressed()){
+			change = 127;
+		} else if(switches[i].justReleased()){
+			change = 0;
+		} else if(update){
+			change = (uint8_t)switches[i].isPressed();
+			change *= 127;
+		} else {
+			// If no change, skip midi update.
+			continue;
+		}
 
+		int8_t controlChange = -1;
+
+		switch(i){
+			case 0:
+			// pin 2
+				controlChange = CC_MOD_MIX_1;
+				break;
+			case 1:
+			// pin 3
+				controlChange = CC_MOD_MIX_2;
+				break;
+			case 2:
+			// pin 4
+				controlChange = CC_OSC_MOD;
+				break;
+			case 3:
+			// pin 5
+				controlChange = CC_PORTAMENTO_ON_OFF;
+				break;
+			case 4:
+			// pin 6
+				controlChange = CC_LFO_SHAPE;
+				break;
+			case 5:
+			// pin 7
+				controlChange = CC_OSC3_CTRL;
+				break;
+			case 6:
+			// pin 8
+				mixSw[0] = (bool)change;
+				updateMix(0, 1);
+				continue;
+			case 7:
+			// pin 9
+				mixSw[1] = (bool)change;
+				updateMix(1, 1);
+				continue;
+			case 8:
+			// pin 10
+				mixSw[2] = (bool)change;
+				updateMix(2, 1);
+				continue;
+			case 9:
+			// pin 11
+				mixSw[3] = (bool)change;
+				updateMix(3, 1);
+				continue;
+			case 10:
+			// pin 12
+				mixSw[4] = (bool)change;
+				updateMix(4, 1);
+				continue;
+			case 11:
+			// pin 13
+				controlChange = CC_NOISE_COLOR;
+				break;
+			case 12:
+			// pin 14
+				controlChange = CC_FUNCTION;
+				break;
+			case 13:
+			// pin 15
+				controlChange = CC_TRANSPOSE;
+				if(change == 0) continue;
+				change = 127;
+				break;
+			case 14:
+			// pin 16
+				controlChange = CC_TRANSPOSE;
+				if(change == 127) continue;
+				change = 0;
+				break;
+			default:
+				continue;			
+		}
+
+		midi1.sendControlChange(controlChange, change, 1);
+	}
 }
 
-void updateSwitches(){
-	
+void updateControls(){
+	for(uint8_t i = 0; i < NUM_POTS; ++i){
+		uint16_t value = 0;
+
+		value = pots[i].filter(analogRead(APIN[i]));
+		if((value != potState[i]) || update){
+			potState[i] = value;
+		} else {
+			// If not change, skip midi update
+			continue;				
+		}
+
+		int8_t controlChange = -1;
+
+		switch(i){
+			case 0:
+				controlChange = CC_LFO_RATE;
+				break;
+			case 1:
+				controlChange = CC_MODULATION_MIX;
+				break;
+			case 2:
+				controlChange = CC_PORTAMENTO_TIME;
+				break;
+			case 3:
+				midi1.sendPitchBend((int16_t)value - 512, 1);
+				continue;
+			case 4:
+				controlChange = CC_MOD_WHEEL;
+				break;
+			case 5:
+				// rotary selector : value must be divided by ~170
+				controlChange = CC_OSC1_RANGE;
+				value /= 170;
+				value = 5 - value;
+				// We have to check if the value after dividing is different from the previous one !
+				if(value == selectors[0]){
+					continue;
+				} else {
+					selectors[0] = value;
+				}
+				break;
+			case 6:
+				controlChange = CC_OSC2_RANGE;
+				value /= 170;
+				value = 5 - value;
+				if(value == selectors[1]){
+					continue;
+				} else {
+					selectors[1] = value;
+				}
+				break;
+			case 7:
+				controlChange = CC_OSC3_RANGE;
+				value /= 170;
+				value = 5 - value;
+				if(value == selectors[2]){
+					continue;
+				} else {
+					selectors[2] = value;
+				}
+				break;
+			case 8:
+				controlChange = CC_OSC1_WAVEFORM;
+				value /= 170;
+				if(value == selectors[3]){
+					continue;
+				} else {
+					selectors[3] = value;
+				}
+				break;
+			case 9:
+				controlChange = CC_OSC2_WAVEFORM;
+				value /= 170;
+				if(value == selectors[4]){
+					continue;
+				} else {
+					selectors[4] = value;
+				}
+				break;
+			case 10:
+				controlChange = CC_OSC3_WAVEFORM;
+				value /= 170;
+				if(value == selectors[5]){
+					continue;
+				} else {
+					selectors[5] = value;
+				}
+				break;
+			case 11:
+				// mix is to be sent only if switch is on.
+//				controlChange = CC_OSC1_MIX;
+				mix[0] = value;
+				updateMix(0);
+				continue;
+			case 12:
+//				controlChange = CC_OSC2_MIX;
+				mix[1] = value;
+				updateMix(1);
+				continue;
+			case 13:
+//				controlChange = CC_OSC3_MIX;
+				mix[2] = value;
+				updateMix(2);
+				continue;
+			case 14:
+//				controlChange = CC_NOISE_MIX;
+				mix[3] = value;
+				updateMix(3);
+				continue;
+			case 15:
+//				controlChange = CC_FEEDBACK_MIX;
+				mix[4] = value;
+				updateMix(4);
+				continue;
+			default:
+				continue;
+		}
+
+		if( controlChange < 32){
+			sendLongControlChange(controlChange, value, 1);
+		} else {
+			midi1.sendControlChange(controlChange, value, 1);
+		}
+	}
 }
 
 void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
