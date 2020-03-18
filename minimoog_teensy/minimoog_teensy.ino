@@ -113,7 +113,12 @@ uint8_t waveforms[6] = {WAVEFORM_SINE, WAVEFORM_TRIANGLE, WAVEFORM_SAWTOOTH,
 
 // keyTrack
 uint8_t keyTrackIndex = 0;
-uint8_t keyTrack[KEYTRACK_MAX] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+struct {
+	uint8_t key;
+	uint8_t velocity;
+} keyTrack[KEYTRACK_MAX];
+
+int8_t nowPlaying = -1;
 
 // double CC track
 uint8_t ccTempValue[32];
@@ -125,7 +130,7 @@ enum keyMode_t{
 	KEY_UPPER,
 };
 
-keyMode_t keyMode = KEY_LAST;
+keyMode_t keyMode = KEY_UPPER;
 
 struct midiSettings : public midi::DefaultSettings{
 //	static const bool UseRunningStatus = true;
@@ -281,6 +286,11 @@ void loop() {
 }
 
 void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
+/*
+	Serial.print("playing :");
+	Serial.println(note);
+*/
+	nowPlaying = note;
 	float duration = (float)glideEn * (float)glide * 3.75;
 	float level = ((float)note + 12 * transpose) * HALFTONE_TO_DC;
 	float filterLevel = (((float)note - FILTER_BASE_NOTE) + (12 * transpose)) * FILTER_HALFTONE_TO_DC;
@@ -302,18 +312,63 @@ void noteOff(){
 	AudioInterrupts();
 }
 
-int8_t keyTrackAddNote(uint8_t note){
+int8_t keyTrackGetLower(uint8_t note){
+	uint8_t lower = 127;
+	int8_t lowerIndex = keyTrackIndex - 1;
+
+	for(uint8_t i = 0; i < keyTrackIndex; ++i){
+		if(keyTrack[i].key < lower){
+			lower = keyTrack[i].key;
+			lowerIndex = i;
+		}
+	}
+/*
+	Serial.print("lower note   : ");
+	Serial.print(lower);
+	Serial.print("\t index : ");
+	Serial.println(lowerIndex);
+*/
+	return lowerIndex;
+}
+
+int8_t keyTrackGetUpper(uint8_t note){
+	uint8_t upper = 0;
+	int8_t upperIndex = keyTrackIndex - 1;
+
+	for(uint8_t i = 0; i < keyTrackIndex; ++i){
+		if(keyTrack[i].key > upper){
+			upper = keyTrack[i].key;
+			upperIndex = i;
+		}
+	}
+/*
+	Serial.print("upper note   : ");
+	Serial.print(upper);
+	Serial.print("\t index : ");
+	Serial.println(upperIndex);
+*/
+	return upperIndex;
+}
+
+int8_t keyTrackAddNote(uint8_t note, uint8_t velocity){
 	// We only keep count of a limited quantity of notes !
 	if (keyTrackIndex >= KEYTRACK_MAX) return -1;
+/*
+	Serial.print("note added   : ");
+	Serial.print(note);
+	Serial.print("\t index : ");
+	Serial.println(keyTrackIndex);
+*/
+	keyTrack[keyTrackIndex].key = note;
+	keyTrack[keyTrackIndex].velocity = velocity;
 
-	keyTrack[keyTrackIndex] = note;
 	return keyTrackIndex++;
 }
 
 int8_t keyTrackRemoveNote(uint8_t note){
 	int8_t update = -1;
 	for(uint8_t i = 0; i < keyTrackIndex; ++i){
-		if(keyTrack[i] == note){
+		if(keyTrack[i].key == note){
 			update = i;
 			keyTrackIndex--;
 			break;
@@ -321,6 +376,12 @@ int8_t keyTrackRemoveNote(uint8_t note){
 	}
 
 	if(update >= 0){
+/*
+		Serial.print("note removed : ");
+		Serial.print(note);
+		Serial.print("\t index : ");
+		Serial.println(update);
+*/
 		for(uint8_t i = update; i < keyTrackIndex; ++i){
 			keyTrack[i] = keyTrack[i + 1];
 		}
@@ -335,28 +396,55 @@ void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 	Serial.print(note);
 	Serial.println(" on");
 */
+	int8_t newIndex = -1;
+	int8_t lowerIndex = -1;
+	int8_t upperIndex = -1;
 	switch(keyMode){
 		// When KEY_FIRST, we play the note only if there is not one already playing
+		// But we keep track of all notes depressed !
 		case KEY_FIRST:
-			if(keyTrackIndex != 0) return;
-			keyTrack[0] = note;
-			keyTrackIndex = 1;
+			if(keyTrackAddNote(note, velocity) == 0)
 			noteOn(note, velocity);
-//			if(keyTrackAddNote(note) == 0) noteOn(note, velocity);
 			break;
 		// When KEY_LAST, we play the new note anyway.
+		// And keep track. Of course.
 		case KEY_LAST:
-			keyTrack[0] = note;
-			if(keyTrackIndex != 0){
-				noteOn(note, velocity, noteRetrigger);
-			} else {
-				noteOn(note, velocity);
-			}
-			keyTrackIndex = 1;
-//			if(keyTrackAddNote(note) == (keyTrackIndex - 1)) noteOn(note, velocity);
+			if(keyTrackAddNote(note, velocity) >= 0) noteOn(note, velocity);
 			break;
 		case KEY_LOWER:
+			// add note to the keytrack table.
+			// check if there is a lower one.
+			// if no, play the note.
+			// if yes, do nothing.
+//			Serial.println("handle note on");
+
+			newIndex = keyTrackAddNote(note, velocity);
+			lowerIndex = keyTrackGetLower(note);
+/*
+			Serial.print("new   : ");
+			Serial.print(newIndex);
+			Serial.print("\tlower : ");
+			Serial.println(lowerIndex);
+*/
+			if(newIndex >= 0){
+				if(lowerIndex == (keyTrackIndex - 1)){
+					noteOn(note, velocity);
+				}
+			}
+			break;
 		case KEY_UPPER:
+			// add note to the keytrack table.
+			// check if there is an upper one.
+			// If no, play the note.
+			// If yes, do nothing.
+			newIndex = keyTrackAddNote(note, velocity);
+			upperIndex = keyTrackGetUpper(note);
+			if(newIndex >= 0){
+				if(upperIndex == (keyTrackIndex - 1)){
+					noteOn(note, velocity);
+				}
+			}
+			break;
 		default:
 			break;
 	}
@@ -369,23 +457,68 @@ void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 	Serial.print(note);
 	Serial.println(" off");
 */
+	int8_t lowerIndex = -1;
+	int8_t upperIndex = -1;
+	int8_t newIndex = -1;
 	switch(keyMode){
 		case KEY_FIRST:
-/*			if(keyTrackRemoveNote(note) == 0){
+			if(keyTrackRemoveNote(note) == 0){
 				noteOff();
+				if(keyTrackIndex > 0){
+					noteOn(keyTrack[0].key, keyTrack[0].velocity, noteRetrigger);
+				}
 			}
 			break;
-*/		case KEY_LAST:
-			if(keyTrack[0] == note){
-				keyTrackIndex = 0;
+		case KEY_LAST:
+			if(keyTrackRemoveNote(note) == keyTrackIndex){
 				noteOff();
+				if(keyTrackIndex > 0){
+					noteOn(keyTrack[keyTrackIndex - 1].key,
+						keyTrack[keyTrackIndex - 1].velocity, noteRetrigger);
+				}
 			}
-/*			if(keyTrackRemoveNote(note) == keyTrackIndex){
-				noteOff();
-			}
-*/			break;			
+			break;			
 		case KEY_LOWER:
+			// check the keytrack table and remove the note of it.
+			// compare it to other notes.
+			// if there is no, send note off.
+			// if there is a lower, do nothing.
+			// if there is an upper, play the new lower note.
+//			Serial.println("handle note off");
+
+			lowerIndex = keyTrackGetLower(note);
+			newIndex = keyTrackRemoveNote(note);
+/*
+			Serial.print("new   : ");
+			Serial.print(newIndex);
+			Serial.print("\tlower : ");
+			Serial.println(lowerIndex);
+*/
+			if(newIndex == lowerIndex){
+				noteOff();
+			}
+			if(keyTrackIndex > 0){
+				newIndex = keyTrackGetLower(note);
+				if(keyTrack[newIndex].key != nowPlaying){
+					noteOn(keyTrack[newIndex].key,
+						keyTrack[newIndex].velocity, noteRetrigger);
+				}
+			}
+			break;
 		case KEY_UPPER:
+			upperIndex = keyTrackGetUpper(note);
+			newIndex = keyTrackRemoveNote(note);
+			if(newIndex == upperIndex){
+				noteOff();
+			}
+			if(keyTrackIndex > 0){
+				newIndex = keyTrackGetUpper(note);
+				if(keyTrack[newIndex].key != nowPlaying){
+					noteOn(keyTrack[newIndex].key,
+						keyTrack[newIndex].velocity, noteRetrigger);
+				}
+			}
+			break;
 		default:
 			break;
 	}

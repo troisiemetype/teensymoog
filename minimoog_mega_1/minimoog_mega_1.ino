@@ -78,7 +78,7 @@
 
 // Constants
 const uint8_t NUM_KEYS = 30;
-const uint8_t MIDI_OFFSET = 47; // to be maybe modified
+const uint8_t MIDI_OFFSET = 48; // to be maybe modified
 
 const uint8_t NUM_SWITCHES = 15;
 const uint8_t NUM_POTS = 16;
