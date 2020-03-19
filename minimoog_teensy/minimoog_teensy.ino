@@ -47,14 +47,20 @@
 #include <SPI.h>
 #include <SD.h>
 #include <SerialFlash.h>
+#include <EEPROM.h>
 
 #include "audio_setup.h"
 #include "defs.h"
 
 #include "MIDI.h"
+#include "Timer.h"
 
 // constants
 const uint8_t KEYTRACK_MAX = 10;
+
+// Mega1 sends midi note 0 for the lower note ; we offset it by for octave to get into the usefull range
+const uint8_t MIDI_OFFSET = 48;
+const uint8_t NUM_KEYS = 30;
 
 const uint8_t MAX_OCTAVE = 10;
 const uint8_t FILTER_MAX_OCTAVE = 5;
@@ -73,6 +79,7 @@ const float MAX_MIX = 1.0;
 const uint16_t RESO = 1024;
 const uint16_t HALF_RESO = RESO / 2;
 
+// To be put in Mega1 sketch, so it sends a value on 14 bits.
 const int16_t PITCH_BEND_MIN = -168;
 const int16_t PITCH_BEND_MAX = 134;
 const int16_t PITCH_BEND_NEUTRAL = PITCH_BEND_MIN + (PITCH_BEND_MAX - PITCH_BEND_MIN) / 2;
@@ -86,9 +93,19 @@ const uint16_t MOD_WHEEL_COURSE = MOD_WHEEL_MAX - MOD_WHEEL_MIN;
 const uint8_t MEGA1_RST = 2;
 const uint8_t MEGA2_RST = 18;
 
+const uint16_t EE_BITCRUSH_ADD = 0;
+const uint16_t EE_KEYBOARD_MODE_ADD = 1;
+const uint16_t EE_MIDI_IN_CH_ADD = 2;
+const uint16_t EE_MIDI_OUT_CH_ADD = 3;
+const uint16_t EE_TRIGGER_ADD = 4;
+const uint16_t EE_DETUNE_ADD = 5;
+const uint16_t EE_DETUNE_TABLE_ADD = 20;
+
 // variables
 
-uint8_t midiChannel = 1;
+uint8_t internalMidiChannel = 1;
+uint8_t midiInChannel = 1;
+uint8_t midiOutChannel = 1;
 
 uint16_t glide = 0;
 bool glideEn  = 0;
@@ -110,7 +127,8 @@ float egDecay = 0;
 // Waveforms
 uint8_t waveforms[6] = {WAVEFORM_SINE, WAVEFORM_TRIANGLE, WAVEFORM_SAWTOOTH,
 						WAVEFORM_SAWTOOTH_REVERSE, WAVEFORM_SQUARE, WAVEFORM_PULSE};
-
+// detune table
+float detuneTable[128];
 // keyTrack
 uint8_t keyTrackIndex = 0;
 struct {
@@ -123,21 +141,47 @@ int8_t nowPlaying = -1;
 // double CC track
 uint8_t ccTempValue[32];
 
+enum function_t{
+	FUNCTION_KEYBOARD_MODE = 0,
+	FUNCTION_RETRIGGER,
+	FUNCTION_DETUNE,
+	FUNCTION_BITCRUSH,
+	FUNCTION_MIDI_IN_CHANNEL,
+	FUNCTION_MIDI_OUT_CHANNEL,
+};
+
+function_t currentFunction = FUNCTION_KEYBOARD_MODE;
+
 enum keyMode_t{
-	KEY_FIRST = 0,
+	KEY_LOWER = 0,
+	KEY_FIRST,
 	KEY_LAST,
-	KEY_LOWER,
 	KEY_UPPER,
 };
 
-keyMode_t keyMode = KEY_UPPER;
+keyMode_t keyMode = KEY_LAST;
+
+enum detune_t{
+	DETUNE_OFF = 0,
+	DETUNE_SOFT,
+	DETUNE_MEDIUM,
+	DETUNE_HARD,
+	DETUNE_RESET,
+};
+
+detune_t detune = DETUNE_OFF;
+float detuneCoeff[4] = {0, 0.1, 0.3, 0.5};
+
+uint8_t bitCrushLevel = 16;
 
 struct midiSettings : public midi::DefaultSettings{
 //	static const bool UseRunningStatus = true;
 	static const long BaudRate = 115200;
 };
 
-// The one we use on synth
+// USB midi for sending and receiving to other device or computer.
+// MIDI_CREATE_DEFAULT_INSTANCE();
+// The ones we use on synth for internal communication between Mega and Teensy
 MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial1, midi1, midiSettings);
 MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial4, midi2, midiSettings);
 
@@ -147,8 +191,8 @@ void setup() {
 	// Mega resets
 	pinMode(MEGA1_RST, OUTPUT);
 	pinMode(MEGA2_RST, OUTPUT);
-	digitalWrite(MEGA1_RST, 0);
-	digitalWrite(MEGA2_RST, 0);
+	digitalWrite(MEGA1_RST, 1);
+	digitalWrite(MEGA2_RST, 1);
 
 	// midi settings, start and callback
 	midi1.begin(1);
@@ -161,19 +205,28 @@ void setup() {
 	midi2.begin(1);
 	midi2.turnThruOff();
 	midi2.setHandleControlChange(handleControlChange);
-
 /*
 	Serial.begin(115200);
 	Serial.println("started...");
 */
+	// Getting the settings from "eeprom"
+	EEPROM.get(EE_BITCRUSH_ADD, bitCrushLevel);
+	EEPROM.get(EE_KEYBOARD_MODE_ADD, keyMode);
+	EEPROM.get(EE_MIDI_IN_CH_ADD, midiInChannel);
+	EEPROM.get(EE_MIDI_OUT_CH_ADD, midiOutChannel);
+	EEPROM.get(EE_TRIGGER_ADD, noteRetrigger);
+	EEPROM.get(EE_DETUNE_ADD, detune);
+
+	uint16_t address = EE_DETUNE_TABLE_ADD;
+	for(uint16_t i = 0; i < 128; ++i){
+		EEPROM.get(address, detuneTable[i]);
+		address += 4;
+	}
+	// TODO : check how to receive and transmit on different channels.
+//	MIDI.begin(midiInChannel);
+//	MIDI.turnThruOff();
+
 	AudioMemory(200);
-
-	digitalWrite(MEGA1_RST, 1);
-	digitalWrite(MEGA2_RST, 1);
-	delay(500);
-
-	midi1.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
-	midi2.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
 
 	// audio settings
 	// dc
@@ -286,14 +339,18 @@ void loop() {
 }
 
 void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
+//	MIDI.sendNoteOn(note, velocity, 1);
 /*
 	Serial.print("playing :");
 	Serial.println(note);
 */
 	nowPlaying = note;
+	float fineTune = detuneTable[note] * detuneCoeff[detune];
 	float duration = (float)glideEn * (float)glide * 3.75;
 	float level = ((float)note + 12 * transpose) * HALFTONE_TO_DC;
+	level += fineTune;
 	float filterLevel = (((float)note - FILTER_BASE_NOTE) + (12 * transpose)) * FILTER_HALFTONE_TO_DC;
+	filterLevel += fineTune;
 
 	AudioNoInterrupts();
 	dcKeyTrack.amplitude(level, duration);
@@ -306,6 +363,8 @@ void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
 }
 
 void noteOff(){
+//	MIDI.sendNoteOff(nowPlaying, 0, 1);
+
 	AudioNoInterrupts();
 	filterEnvelope.noteOff();
 	mainEnvelope.noteOff();
@@ -350,7 +409,7 @@ int8_t keyTrackGetUpper(uint8_t note){
 	return upperIndex;
 }
 
-int8_t keyTrackAddNote(uint8_t note, uint8_t velocity){
+int8_t keyTrackAdd(uint8_t note, uint8_t velocity){
 	// We only keep count of a limited quantity of notes !
 	if (keyTrackIndex >= KEYTRACK_MAX) return -1;
 /*
@@ -365,7 +424,7 @@ int8_t keyTrackAddNote(uint8_t note, uint8_t velocity){
 	return keyTrackIndex++;
 }
 
-int8_t keyTrackRemoveNote(uint8_t note){
+int8_t keyTrackRemove(uint8_t note){
 	int8_t update = -1;
 	for(uint8_t i = 0; i < keyTrackIndex; ++i){
 		if(keyTrack[i].key == note){
@@ -396,6 +455,12 @@ void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 	Serial.print(note);
 	Serial.println(" on");
 */
+
+	if(function){
+		handleKeyboardFunction(note, 1);
+		return;
+	}
+
 	int8_t newIndex = -1;
 	int8_t lowerIndex = -1;
 	int8_t upperIndex = -1;
@@ -403,13 +468,19 @@ void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 		// When KEY_FIRST, we play the note only if there is not one already playing
 		// But we keep track of all notes depressed !
 		case KEY_FIRST:
-			if(keyTrackAddNote(note, velocity) == 0)
+			if(keyTrackAdd(note, velocity) == 0)
 			noteOn(note, velocity);
 			break;
 		// When KEY_LAST, we play the new note anyway.
 		// And keep track. Of course.
 		case KEY_LAST:
-			if(keyTrackAddNote(note, velocity) >= 0) noteOn(note, velocity);
+//			if(keyTrackAdd(note, velocity) >= 0) noteOn(note, velocity);
+			newIndex = keyTrackAdd(note, velocity);
+			if(newIndex == 0){
+				noteOn(note, velocity, 1);
+			} else if(newIndex > 0){
+				noteOn(note, velocity, noteRetrigger);
+			}
 			break;
 		case KEY_LOWER:
 			// add note to the keytrack table.
@@ -418,7 +489,7 @@ void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 			// if yes, do nothing.
 //			Serial.println("handle note on");
 
-			newIndex = keyTrackAddNote(note, velocity);
+			newIndex = keyTrackAdd(note, velocity);
 			lowerIndex = keyTrackGetLower(note);
 /*
 			Serial.print("new   : ");
@@ -426,9 +497,11 @@ void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 			Serial.print("\tlower : ");
 			Serial.println(lowerIndex);
 */
-			if(newIndex >= 0){
-				if(lowerIndex == (keyTrackIndex - 1)){
+			if(lowerIndex == (keyTrackIndex - 1)){
+				if(newIndex == 0){
 					noteOn(note, velocity);
+				} else if(newIndex > 0){
+					noteOn(note, velocity, noteRetrigger);
 				}
 			}
 			break;
@@ -437,11 +510,14 @@ void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 			// check if there is an upper one.
 			// If no, play the note.
 			// If yes, do nothing.
-			newIndex = keyTrackAddNote(note, velocity);
+			newIndex = keyTrackAdd(note, velocity);
 			upperIndex = keyTrackGetUpper(note);
-			if(newIndex >= 0){
-				if(upperIndex == (keyTrackIndex - 1)){
+
+			if(upperIndex == (keyTrackIndex - 1)){
+				if(newIndex == 0){
 					noteOn(note, velocity);
+				} else if(newIndex > 0){
+					noteOn(note, velocity, noteRetrigger);
 				}
 			}
 			break;
@@ -457,24 +533,32 @@ void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 	Serial.print(note);
 	Serial.println(" off");
 */
+
+	if(function){
+//		handleKeyboardFunction(note, 0);
+		return;
+	}
+
 	int8_t lowerIndex = -1;
 	int8_t upperIndex = -1;
 	int8_t newIndex = -1;
 	switch(keyMode){
 		case KEY_FIRST:
-			if(keyTrackRemoveNote(note) == 0){
-				noteOff();
+			if(keyTrackRemove(note) == 0){
 				if(keyTrackIndex > 0){
 					noteOn(keyTrack[0].key, keyTrack[0].velocity, noteRetrigger);
+				} else {
+					noteOff();					
 				}
 			}
 			break;
 		case KEY_LAST:
-			if(keyTrackRemoveNote(note) == keyTrackIndex){
-				noteOff();
+			if(keyTrackRemove(note) == keyTrackIndex){
 				if(keyTrackIndex > 0){
 					noteOn(keyTrack[keyTrackIndex - 1].key,
 						keyTrack[keyTrackIndex - 1].velocity, noteRetrigger);
+				} else {
+					noteOff();					
 				}
 			}
 			break;			
@@ -487,35 +571,35 @@ void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 //			Serial.println("handle note off");
 
 			lowerIndex = keyTrackGetLower(note);
-			newIndex = keyTrackRemoveNote(note);
+			newIndex = keyTrackRemove(note);
 /*
 			Serial.print("new   : ");
 			Serial.print(newIndex);
 			Serial.print("\tlower : ");
 			Serial.println(lowerIndex);
 */
+
 			if(newIndex == lowerIndex){
-				noteOff();
-			}
-			if(keyTrackIndex > 0){
-				newIndex = keyTrackGetLower(note);
-				if(keyTrack[newIndex].key != nowPlaying){
-					noteOn(keyTrack[newIndex].key,
-						keyTrack[newIndex].velocity, noteRetrigger);
+				if(keyTrackIndex == 0){
+					noteOff();
+				} else {
+					lowerIndex = keyTrackGetLower(note);
+					noteOn(keyTrack[lowerIndex].key,
+						keyTrack[lowerIndex].velocity, noteRetrigger);
 				}
 			}
 			break;
 		case KEY_UPPER:
 			upperIndex = keyTrackGetUpper(note);
-			newIndex = keyTrackRemoveNote(note);
+			newIndex = keyTrackRemove(note);
+
 			if(newIndex == upperIndex){
-				noteOff();
-			}
-			if(keyTrackIndex > 0){
-				newIndex = keyTrackGetUpper(note);
-				if(keyTrack[newIndex].key != nowPlaying){
-					noteOn(keyTrack[newIndex].key,
-						keyTrack[newIndex].velocity, noteRetrigger);
+				if(keyTrackIndex == 0){
+					noteOff();
+				} else {
+					upperIndex = keyTrackGetUpper(note);
+					noteOn(keyTrack[upperIndex].key,
+						keyTrack[upperIndex].velocity, noteRetrigger);
 				}
 			}
 			break;
@@ -529,6 +613,7 @@ void handlePitchBend(uint8_t channel, int16_t bend){
 	dcPitchBend.amplitude(((float)bend - PITCH_BEND_NEUTRAL) / PITCH_BEND_COURSE);
 	// Pitch bend goes from -168 to 134.
 	// neutral at -11 from up, -24 from down. :/
+//	MIDI.sendPitchBend(bend - PITCH_BEND_NEUTRAL, 0);
 /*
 	Serial.print("pitch bend :");
 	Serial.println(bend);
@@ -536,6 +621,10 @@ void handlePitchBend(uint8_t channel, int16_t bend){
 }
 
 void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
+	if(function){
+		handleCCFunction(command, value);
+		return;
+	}
 /*
 	Serial.print("control change ");
 	Serial.println(command);
@@ -693,7 +782,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 		case CC_FILTER_BAND_LSB:
 		// CC_51
 			AudioNoInterrupts();
-			bandMixer.gain(0, ((float)longValue - RESO) / RESO);
+			bandMixer.gain(0, ((float)RESO - (float)longValue) / RESO);
 			bandMixer.gain(1, (float)longValue / RESO);
 			AudioInterrupts();
 			break;
@@ -831,8 +920,11 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_FUNCTION:
 		// CC_113
-			if(value > 63){
+			if(value < 64){
+				noteOff();
+				keyTrackIndex = 0;
 				function = 1;
+//				Serial.println("enterring function mode");
 			} else {
 				function = 0;
 			}
@@ -915,5 +1007,139 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		default:
 			break;
+	}
+}
+
+void handleKeyboardFunction(uint8_t note, bool active){
+
+	// for testing, until the note sent from Mega is changed !
+	note++;
+	//
+/*
+	Serial.print("key pressed : ");
+	Serial.println(note);
+*/
+	// Change function
+	switch(note){
+		case 48:
+		// lower DO
+			currentFunction = FUNCTION_KEYBOARD_MODE;
+//			Serial.println("keyboard mode");
+			break;
+		case 50:
+		// lower RE
+			currentFunction = FUNCTION_RETRIGGER;
+//			Serial.println("retrigger");
+			break;
+		case 52:
+		// lower MI
+			currentFunction = FUNCTION_DETUNE;
+//			Serial.println("detune");
+			break;
+		case 53:
+		// lower FA
+			currentFunction = FUNCTION_BITCRUSH;
+//			Serial.println("bitcrush");
+			break;
+		case 55:
+		// lower SOL
+			currentFunction = FUNCTION_MIDI_IN_CHANNEL;
+//			Serial.println("midi in channel");
+			break;
+		case 57:
+		// lower LA
+			currentFunction = FUNCTION_MIDI_OUT_CHANNEL;
+//			Serial.println("midi out channel");
+			break;
+		case 59:
+		// lower Si
+			break;
+		default:
+			if(note < 60) return;
+			note -= 60;
+			break;
+	}
+/*
+const uint16_t EE_BITCRUSH_ADD = 0;
+const uint16_t EE_KEYBOARD_MODE_ADD = 1;
+const uint16_t EE_MIDI_IN_CH_ADD = 2;
+const uint16_t EE_MIDI_OUT_CH_ADD = 3;
+const uint16_t EE_TRIGGER_ADD = 4;
+const uint16_t EE_DETUNE_ADD = 5;
+const uint16_t EE_DETUNE_TABLE_ADD = 6;
+*/
+
+	switch(currentFunction){
+		case FUNCTION_KEYBOARD_MODE:
+			if(note > KEY_UPPER) return;
+			keyMode = (keyMode_t)note;
+			EEPROM.put(EE_KEYBOARD_MODE_ADD, keyMode);
+			break;
+		case FUNCTION_RETRIGGER:
+			if(note > 1) return;
+			noteRetrigger = note;
+			EEPROM.put(EE_TRIGGER_ADD, noteRetrigger);
+			break;
+		case FUNCTION_DETUNE:
+			if(note > DETUNE_RESET) return;
+			if(note == DETUNE_RESET){
+				// run a new detuning table
+				resetDetuneTable();
+			} else {
+				detune = (detune_t)note;
+				EEPROM.put(EE_DETUNE_ADD, detune);
+			}
+			break;
+		case FUNCTION_BITCRUSH:
+			if(note > 12) return;
+			note += 4;
+			bitCrushOutput.bits(note);
+			EEPROM.put(EE_BITCRUSH_ADD, note);
+			break;
+		case FUNCTION_MIDI_IN_CHANNEL:
+			// change (usb) midi in channel
+			if(note > 16)return;
+			midiInChannel = note;
+			//MIDI.begin(midiInChannel);
+			EEPROM.put(EE_MIDI_IN_CH_ADD, midiInChannel);
+			break;
+		case FUNCTION_MIDI_OUT_CHANNEL:
+			// change (usb) midi out channel
+			if(note > 16)return;
+			midiOutChannel = note;
+			//MIDI.begin(midiInChannel);
+			EEPROM.put(EE_MIDI_OUT_CH_ADD, midiOutChannel);
+			break;
+		default:
+			break;		
+	}
+
+}
+
+void handleCCFunction(uint8_t command, uint8_t value){
+	switch(command){
+		case CC_FUNCTION:
+			// CC_113
+			if(value < 64){
+				function = 1;
+			} else {
+				function = 0;
+//				Serial.println("exiting function mode");
+			}
+			break;
+		default:
+			break;
+	}
+}
+
+void resetDetuneTable(){
+	uint16_t address = EE_DETUNE_TABLE_ADD;
+	randomSeed(millis());
+	for(uint8_t i = 0; i < 128; ++i){
+		float value = (random() - 0x3FFFFFFF) / (float)0x3FFFFFFF;
+		value *= HALFTONE_TO_DC;
+		EEPROM.put(address, value);
+		address += 4;
+		Serial.println(value, 5);
 	}
 }

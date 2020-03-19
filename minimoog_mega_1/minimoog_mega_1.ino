@@ -78,7 +78,7 @@
 
 // Constants
 const uint8_t NUM_KEYS = 30;
-const uint8_t MIDI_OFFSET = 48; // to be maybe modified
+// const uint8_t MIDI_OFFSET = 48; // todo : move to teensy !
 
 const uint8_t NUM_SWITCHES = 15;
 const uint8_t NUM_POTS = 16;
@@ -179,7 +179,7 @@ void setup(){
 	// Key initialisation
 	for(uint8_t i = 0; i < NUM_KEYS; ++i){
 		keys[i].begin(KEYS[i], INPUT_PULLUP);
-		keys[i].setDebounceDelay(12);
+		keys[i].setDebounceDelay(8);
 	}
 
 	// Switches initialisation
@@ -239,11 +239,11 @@ void updateKeys(){
 		}
 */
 		keys[i].update();
-		uint8_t key = i + MIDI_OFFSET;
+//		uint8_t key = i + MIDI_OFFSET;
 		if(keys[i].justPressed()){
-			midi1.sendNoteOn(key, defaultVelocity, 1);
+			midi1.sendNoteOn(i, defaultVelocity, 1);
 		} else if(keys[i].justReleased()){
-			midi1.sendNoteOff(key, 0, 1);
+			midi1.sendNoteOff(i, 0, 1);
 		} else {
 			// do nothing
 		}

@@ -1,0 +1,24 @@
+Keyboard mode
+	first
+	last
+	lower
+	upper
+
+Bitcrush
+	4 - 16
+
+Midi in channel
+	1 - 16
+
+Midi out channel
+	1 - 16
+
+Retrigger
+	0 / 1
+
+Detune
+	off
+	soft
+	medium
+	hard
+	reset
