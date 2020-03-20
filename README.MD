@@ -1,7 +1,7 @@
 # TeensyMoog
 
-![teensymoog 1](https://github.com/troisiemetype/teensymoog/tree/master/misc/picures/1.jpg)
-![teensymoog 2](https://github.com/troisiemetype/teensymoog/tree/master/misc/picures/2.jpg)
+![teensymoog 1](https://raw.githubusercontent.com/troisiemetype/teensymoog/master/misc/pictures/1.jpg)
+![teensymoog 2](https://raw.githubusercontent.com/troisiemetype/teensymoog/master/misc/pictures/2.jpg)
 ## What is it ?
 _Teensymoog_ is a synth, inspired by the legendary minimoog.
 
