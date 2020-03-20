@@ -88,9 +88,10 @@ AudioConnection          patchCord41(ampPreFilter, 0, vcf, 0);
 AudioConnection          patchCord42(filterMixer, 0, vcf, 1);
 AudioConnection          patchCord43(vcf, 0, bandMixer, 0);
 AudioConnection          patchCord44(vcf, 1, bandMixer, 1);
-AudioConnection          patchCord45(bandMixer, mainEnvelope);
-AudioConnection          patchCord46(mainEnvelope, bitCrushOutput);
-AudioConnection          patchCord47(mainEnvelope, 0, globalMixer, 1);
-AudioConnection          patchCord48(bitCrushOutput, 0, i2s, 0);
-AudioConnection          patchCord49(bitCrushOutput, 0, i2s, 1);
+AudioConnection          patchCord45(vcf, 2, bandMixer, 2);
+AudioConnection          patchCord46(bandMixer, mainEnvelope);
+AudioConnection          patchCord47(mainEnvelope, bitCrushOutput);
+AudioConnection          patchCord48(mainEnvelope, 0, globalMixer, 1);
+AudioConnection          patchCord49(bitCrushOutput, 0, i2s, 0);
+AudioConnection          patchCord50(bitCrushOutput, 0, i2s, 1);
 // GUItool: end automatically generated code

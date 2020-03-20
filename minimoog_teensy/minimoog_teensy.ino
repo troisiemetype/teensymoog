@@ -60,6 +60,7 @@ const uint8_t KEYTRACK_MAX = 10;
 
 // Mega1 sends midi note 0 for the lower note ; we offset it by for octave to get into the usefull range
 const uint8_t MIDI_OFFSET = 48;
+//const uint8_t MIDI_OFFSET = 0;
 const uint8_t NUM_KEYS = 30;
 
 const uint8_t MAX_OCTAVE = 10;
@@ -187,6 +188,8 @@ MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial4, midi2, midiSettings);
 
 
 void setup() {
+	pinMode(13, OUTPUT);
+	digitalWrite(13, 1);
 
 	// Mega resets
 	pinMode(MEGA1_RST, OUTPUT);
@@ -197,8 +200,8 @@ void setup() {
 	// midi settings, start and callback
 	midi1.begin(1);
 	midi1.turnThruOff();
-	midi1.setHandleNoteOn(handleNoteOn);
-	midi1.setHandleNoteOff(handleNoteOff);
+	midi1.setHandleNoteOn(handleInternalNoteOn);
+	midi1.setHandleNoteOff(handleInternalNoteOff);
 	midi1.setHandlePitchBend(handlePitchBend);
 	midi1.setHandleControlChange(handleControlChange);
 
@@ -225,6 +228,10 @@ void setup() {
 	// TODO : check how to receive and transmit on different channels.
 //	MIDI.begin(midiInChannel);
 //	MIDI.turnThruOff();
+//	MIDI.setHandleNoteOn(handleNoteOn);
+//	MIDI.setHandleNoteOff(handleNoteOff);
+//	MIDI.setHandlePitchBend(handlePitchBend);
+
 
 	AudioMemory(200);
 
@@ -302,6 +309,7 @@ void setup() {
 
 	bandMixer.gain(0, 1);
 	bandMixer.gain(1, 0);
+	bandMixer.gain(2, 0);
 
 	// filter
 	vcf.frequency(FILTER_BASE_FREQUENCY);
@@ -326,8 +334,20 @@ void setup() {
 	bitCrushOutput.bits(16);
 	bitCrushOutput.sampleRate(44100.0);
 
-	delay(500);
+	delay(1000);
 
+	digitalWrite(13, 0);
+	delay(100);
+
+// Blink. For debug. And letting a bit more time to Mega 1 to start.
+	for(uint8_t i = 0; i < 5; ++i){
+		digitalWrite(13, 1);
+		delay(100);
+		digitalWrite(13, 0);
+		delay(50);
+	}
+
+//	Serial.println("asking for all controls");
 	midi1.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
 	midi2.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
 
@@ -449,17 +469,20 @@ int8_t keyTrackRemove(uint8_t note){
 	return update;
 }
 
+void handleInternalNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
+	if(function){
+		handleKeyboardFunction(note, 1);
+		return;
+	}
+	handleNoteOn(channel, note + MIDI_OFFSET, velocity);
+}
+
 void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 /*
 	Serial.print("note ");
 	Serial.print(note);
 	Serial.println(" on");
 */
-
-	if(function){
-		handleKeyboardFunction(note, 1);
-		return;
-	}
 
 	int8_t newIndex = -1;
 	int8_t lowerIndex = -1;
@@ -526,6 +549,13 @@ void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 	}
 
 }
+void handleInternalNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
+	if(function){
+//		handleKeyboardFunction(note, 0);
+		return;
+	}
+	handleNoteOff(channel, note + MIDI_OFFSET, velocity);
+}
 
 void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 /*
@@ -533,11 +563,6 @@ void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 	Serial.print(note);
 	Serial.println(" off");
 */
-
-	if(function){
-//		handleKeyboardFunction(note, 0);
-		return;
-	}
 
 	int8_t lowerIndex = -1;
 	int8_t upperIndex = -1;
@@ -610,8 +635,8 @@ void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 }
 
 void handlePitchBend(uint8_t channel, int16_t bend){
-	dcPitchBend.amplitude(((float)bend - PITCH_BEND_NEUTRAL) / PITCH_BEND_COURSE);
-	// Pitch bend goes from -168 to 134.
+//	dcPitchBend.amplitude(((float)bend - PITCH_BEND_NEUTRAL) / PITCH_BEND_COURSE);	// Pitch bend goes from -168 to 134.
+	dcPitchBend.amplitude(((float)bend) / 8190);
 	// neutral at -11 from up, -24 from down. :/
 //	MIDI.sendPitchBend(bend - PITCH_BEND_NEUTRAL, 0);
 /*
@@ -645,7 +670,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 		longValue += value;
 /*
 		Serial.print("value : ");
-		Serial.print(longValue);
+		Serial.println(longValue);
 		Serial.print(" (sent : ");
 		Serial.print(value);
 		Serial.println(')');
@@ -729,7 +754,8 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_MOD_WHEEL_LSB:
 		// CC_33
-			ampModWheel.gain(((float)longValue - 1 - MOD_WHEEL_MIN) / 12 / MOD_WHEEL_COURSE);
+//			ampModWheel.gain(((float)longValue - 1 - MOD_WHEEL_MIN) / 12 / MOD_WHEEL_COURSE);
+			ampModWheel.gain(((float)longValue) / 12 / 16384);
 			// Mod wheel goes from 360 to 666.
 /*
 			Serial.print("mod wheel : ");
@@ -782,8 +808,15 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 		case CC_FILTER_BAND_LSB:
 		// CC_51
 			AudioNoInterrupts();
-			bandMixer.gain(0, ((float)RESO - (float)longValue) / RESO);
-			bandMixer.gain(1, (float)longValue / RESO);
+			if(longValue < HALF_RESO){
+				bandMixer.gain(0, ((float)HALF_RESO - (float)longValue) / HALF_RESO);
+				bandMixer.gain(1, (float)longValue / HALF_RESO);
+				bandMixer.gain(2, 0.0);
+			} else {
+				bandMixer.gain(0, 0.0);
+				bandMixer.gain(1, ((float)RESO - (float)longValue) / HALF_RESO);
+				bandMixer.gain(2, ((float)longValue - HALF_RESO) / HALF_RESO);
+			}
 			AudioInterrupts();
 			break;
 		case CC_FILTER_CUTOFF_FREQ_LSB:
@@ -836,6 +869,10 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_PORTAMENTO_ON_OFF:
 		// CC_65
+/*
+			Serial.print("portamento on off : ");
+			Serial.println(value);
+*/
 			if(value < 64){
 				glideEn = 1;
 			} else {
@@ -1012,8 +1049,6 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 
 void handleKeyboardFunction(uint8_t note, bool active){
 
-	// for testing, until the note sent from Mega is changed !
-	note++;
 	//
 /*
 	Serial.print("key pressed : ");
@@ -1021,53 +1056,44 @@ void handleKeyboardFunction(uint8_t note, bool active){
 */
 	// Change function
 	switch(note){
-		case 48:
+		case 0:
 		// lower DO
 			currentFunction = FUNCTION_KEYBOARD_MODE;
 //			Serial.println("keyboard mode");
 			break;
-		case 50:
+		case 2:
 		// lower RE
 			currentFunction = FUNCTION_RETRIGGER;
 //			Serial.println("retrigger");
 			break;
-		case 52:
+		case 4:
 		// lower MI
 			currentFunction = FUNCTION_DETUNE;
 //			Serial.println("detune");
 			break;
-		case 53:
+		case 5:
 		// lower FA
 			currentFunction = FUNCTION_BITCRUSH;
 //			Serial.println("bitcrush");
 			break;
-		case 55:
+		case 7:
 		// lower SOL
 			currentFunction = FUNCTION_MIDI_IN_CHANNEL;
 //			Serial.println("midi in channel");
 			break;
-		case 57:
+		case 9:
 		// lower LA
 			currentFunction = FUNCTION_MIDI_OUT_CHANNEL;
 //			Serial.println("midi out channel");
 			break;
-		case 59:
+		case 11:
 		// lower Si
 			break;
 		default:
-			if(note < 60) return;
-			note -= 60;
+			if(note < 12) return;
+			note -= 12;
 			break;
 	}
-/*
-const uint16_t EE_BITCRUSH_ADD = 0;
-const uint16_t EE_KEYBOARD_MODE_ADD = 1;
-const uint16_t EE_MIDI_IN_CH_ADD = 2;
-const uint16_t EE_MIDI_OUT_CH_ADD = 3;
-const uint16_t EE_TRIGGER_ADD = 4;
-const uint16_t EE_DETUNE_ADD = 5;
-const uint16_t EE_DETUNE_TABLE_ADD = 6;
-*/
 
 	switch(currentFunction){
 		case FUNCTION_KEYBOARD_MODE:

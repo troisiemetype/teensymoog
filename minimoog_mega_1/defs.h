@@ -281,5 +281,3 @@
 // #define CC_OMNI_MODE_ON 				CC125
 // #define CC_MONO_MODE_ON 				CC126
 // #define CC_POLY_MODE_ON 				CC127
-
-

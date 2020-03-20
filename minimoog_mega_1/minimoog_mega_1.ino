@@ -84,7 +84,7 @@ const uint8_t NUM_SWITCHES = 15;
 const uint8_t NUM_POTS = 16;
 const uint8_t NUM_SELECTORS = 6;
 
-const uint8_t POT_FILTER_COEF = 15;
+const uint8_t POT_FILTER_COEF = 20;
 
 // Digital pin definition
 const uint8_t KEYS[NUM_KEYS] = {
@@ -154,7 +154,7 @@ uint16_t mix[5];
 bool mixSw[5];
 
 // Misc
-uint8_t defaultVelocity = 96;
+uint8_t defaultVelocity = 64;
 
 bool update = 0;
 
@@ -171,10 +171,7 @@ MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial1, midi1, midiSettings);
 void setup(){
 	// initialisation
 
-	midi1.setHandleControlChange(handleControlChange);
-	midi1.begin(1);
-	midi1.turnThruOff();
-
+//	Serial.begin(115200);
 
 	// Key initialisation
 	for(uint8_t i = 0; i < NUM_KEYS; ++i){
@@ -185,7 +182,7 @@ void setup(){
 	// Switches initialisation
 	for(uint8_t i = 0; i < NUM_SWITCHES; ++i){
 		switches[i].begin(PIN[i], INPUT_PULLUP);
-		switches[i].setDebounceDelay(1);
+		switches[i].setDebounceDelay(5);
 	}
 
 	// potentiometers initialisation
@@ -193,15 +190,80 @@ void setup(){
 		pots[i].begin(analogRead(APIN[i]));
 		pots[i].setCoef(POT_FILTER_COEF);
 	}
+/*
+	// Run init sequence to debounce switches and filter pots, so it's running on stable values.
+	uint32_t initEnd = millis() + 500;
 
+	while(initEnd > millis()){
+
+		for(uint8_t i = 0; i < NUM_KEYS; ++i){
+			keys[i].update();
+		}
+
+		for(uint8_t i = 0; i < NUM_SWITCHES; ++i){
+			switches[i].update();
+		}
+
+// This causes the most inexplicable bug I've ever seen.
+// When the switches (above) are depressed in the main loop, the board reboots.
+// Probably something like a segmentation error, I suspect the board is partially HS.
+// For now it will stay the same...
+/*
+		uint16_t value = 0;
+		for(uint8_t i = 0; i < NUM_POTS; ++i){
+			uint16_t temp = 0;
+			value = analogRead(APIN[i]);
+			temp = pots[i].filter(value);
+			potState[i] = temp;
+		}
+
+	}
+*/
+	midi1.setHandleControlChange(handleControlChange);
+	midi1.begin(1);
+	midi1.turnThruOff();
 }
 
 void loop(){
+
 	midi1.read();
 	updateKeys();
 	updateSwitches();
 	updateControls();
 	update = 0;
+/*
+	Serial.println("keys");
+	for(uint8_t i = 22; i < (22 + NUM_KEYS); ++i){
+		Serial.print(digitalRead(i));
+		Serial.print('\t');
+	}
+	Serial.println();
+	Serial.println("pots");
+	for(uint8_t i = 0; i < NUM_POTS; ++i){
+		Serial.print(analogRead(APIN[i]));
+		Serial.print('\t');
+	}
+	Serial.println();
+	Serial.println("switches");
+	for(uint8_t i = 0; i < NUM_SWITCHES; ++i){
+		Serial.print(digitalRead(PIN[i]));
+		Serial.print('\t');
+	}
+	Serial.println("\n\n");
+	delay(50);
+*/
+}
+
+int32_t remap(int32_t value, int32_t lowerIn, int32_t upperIn, int32_t lowerOut, int32_t upperOut){
+	int32_t inRange = upperIn - lowerIn;
+	int32_t outRange = upperOut - lowerOut;
+	float ratio = (float)outRange / (float)inRange;
+	value -= lowerIn;
+	value *= ratio;
+	value += lowerOut;
+	if(value < lowerOut) value = lowerOut;
+	if(value > upperOut) value = upperOut;
+	return value;
 }
 
 void sendLongControlChange(uint8_t controlChange, uint16_t value, uint8_t channel = 1){
@@ -223,21 +285,6 @@ void updateMix(uint8_t ch, bool fromSw = 0){
 void updateKeys(){
 	// reading keys
 	for(uint8_t i = 0; i < NUM_KEYS; ++i){
-/*
-		bool newState = digitalRead(KEYS[i]);
-		if(newState != keyState[i]){
-			uint8_t key = i + MIDI_OFFSET;
-			keyState[i] = newState;
-			if(newState){
-				// MIDI note on
-				midi1.sendNoteOn(key, defaultVelocity, 1);
-
-			} else {
-				// MIDI note off
-				midi1.sendNoteOff(key, 0, 1);
-			}
-		}
-*/
 		keys[i].update();
 //		uint8_t key = i + MIDI_OFFSET;
 		if(keys[i].justPressed()){
@@ -374,10 +421,14 @@ void updateControls(){
 				controlChange = CC_PORTAMENTO_TIME;
 				break;
 			case 3:
-				midi1.sendPitchBend((int16_t)value - 512, 1);
+//				int16_t val = remap(value, 360, 660, -8190, 8190);
+				midi1.sendPitchBend((int16_t)value, 1);
 				continue;
 			case 4:
 				controlChange = CC_MOD_WHEEL;
+				value = remap(value, 360, 660, 0, 16384);
+//				value = map(value, 360, 660, 0, 16384);
+//				value = constrain(value, 0, 16384);				
 				break;
 			case 5:
 				// rotary selector : value must be divided by ~170

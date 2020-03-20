@@ -125,6 +125,19 @@ void setup(){
 		pots[i].setCoef(POT_FILTER_COEF);
 	}
 
+	// Run init sequence to debounce switches and filter pots, so it's running for stable values.
+	uint32_t initEnd = millis() + 500;
+	while(millis() < initEnd){
+		for(uint8_t i = 0; i < NUM_SWITCHES; ++i){
+			switches[i].update();
+		}
+
+		for(uint8_t i = 0; i < NUM_POTS; ++i){
+			uint16_t value = pots[i].filter(analogRead(APIN[i]));
+			potState[i] = value;
+		}		
+	}
+
 	midi1.setHandleControlChange(handleControlChange);
 	midi1.begin(1);
 	midi1.turnThruOff();
