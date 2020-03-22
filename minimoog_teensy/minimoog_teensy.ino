@@ -66,6 +66,7 @@ const uint8_t NUM_KEYS = 30;
 const uint8_t MAX_OCTAVE = 10;
 const uint8_t FILTER_MAX_OCTAVE = 5;
 
+
 const float NOTE_MIDI_0 = 8.1757989156434;
 const float NOTE_RATIO = 1.0594630943593;
 
@@ -85,12 +86,13 @@ const int16_t PITCH_BEND_MIN = -168;
 const int16_t PITCH_BEND_MAX = 134;
 const int16_t PITCH_BEND_NEUTRAL = PITCH_BEND_MIN + (PITCH_BEND_MAX - PITCH_BEND_MIN) / 2;
 const int16_t PITCH_BEND_COURSE = PITCH_BEND_MAX - PITCH_BEND_MIN;
-
+/*
+// Moved to Mega 1
 const uint16_t MOD_WHEEL_MIN = 360;
 const uint16_t MOD_WHEEL_MAX = 666;
 const uint16_t MOD_WHEEL_NEUTRAL = MOD_WHEEL_MIN + (MOD_WHEEL_MAX - MOD_WHEEL_MIN) / 2;
 const uint16_t MOD_WHEEL_COURSE = MOD_WHEEL_MAX - MOD_WHEEL_MIN;
-
+*/
 const uint8_t MEGA1_RST = 2;
 const uint8_t MEGA2_RST = 18;
 
@@ -100,6 +102,7 @@ const uint16_t EE_MIDI_IN_CH_ADD = 2;
 const uint16_t EE_MIDI_OUT_CH_ADD = 3;
 const uint16_t EE_TRIGGER_ADD = 4;
 const uint16_t EE_DETUNE_ADD = 5;
+const uint16_t EE_FILTER_MODE = 6;
 const uint16_t EE_DETUNE_TABLE_ADD = 20;
 
 // variables
@@ -125,6 +128,8 @@ bool decay = 0;
 float filterDecay = 0;
 float egDecay = 0;
 
+int16_t filterBandValue = 0;
+
 // Waveforms
 uint8_t waveforms[6] = {WAVEFORM_SINE, WAVEFORM_TRIANGLE, WAVEFORM_SAWTOOTH,
 						WAVEFORM_SAWTOOTH_REVERSE, WAVEFORM_SQUARE, WAVEFORM_PULSE};
@@ -147,6 +152,7 @@ enum function_t{
 	FUNCTION_RETRIGGER,
 	FUNCTION_DETUNE,
 	FUNCTION_BITCRUSH,
+	FUNCTION_FILTER_MODE,
 	FUNCTION_MIDI_IN_CHANNEL,
 	FUNCTION_MIDI_OUT_CHANNEL,
 };
@@ -173,6 +179,13 @@ enum detune_t{
 detune_t detune = DETUNE_OFF;
 float detuneCoeff[4] = {0, 0.1, 0.3, 0.5};
 
+enum filterMode_t{
+	FILTER_BAND_PASS = 0,
+	FILTER_BAND_STOP,
+};
+
+filterMode_t filterMode = FILTER_BAND_PASS;
+
 uint8_t bitCrushLevel = 16;
 
 struct midiSettings : public midi::DefaultSettings{
@@ -181,7 +194,7 @@ struct midiSettings : public midi::DefaultSettings{
 };
 
 // USB midi for sending and receiving to other device or computer.
-// MIDI_CREATE_DEFAULT_INSTANCE();
+MIDI_CREATE_DEFAULT_INSTANCE();
 // The ones we use on synth for internal communication between Mega and Teensy
 MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial1, midi1, midiSettings);
 MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial4, midi2, midiSettings);
@@ -219,6 +232,7 @@ void setup() {
 	EEPROM.get(EE_MIDI_OUT_CH_ADD, midiOutChannel);
 	EEPROM.get(EE_TRIGGER_ADD, noteRetrigger);
 	EEPROM.get(EE_DETUNE_ADD, detune);
+	EEPROM.get(EE_FILTER_MODE, filterMode);
 
 	uint16_t address = EE_DETUNE_TABLE_ADD;
 	for(uint16_t i = 0; i < 128; ++i){
@@ -226,11 +240,10 @@ void setup() {
 		address += 4;
 	}
 	// TODO : check how to receive and transmit on different channels.
-//	MIDI.begin(midiInChannel);
-//	MIDI.turnThruOff();
-//	MIDI.setHandleNoteOn(handleNoteOn);
-//	MIDI.setHandleNoteOff(handleNoteOff);
-//	MIDI.setHandlePitchBend(handlePitchBend);
+	usbMIDI.setHandleNoteOn(handleNoteOn);
+	usbMIDI.setHandleNoteOff(handleNoteOff);
+//	usbMIDI.setHandlePitchBend(handlePitchBend);
+	usbMIDI.begin();
 
 
 	AudioMemory(200);
@@ -255,6 +268,7 @@ void setup() {
 	ampPreFilter.gain(1.0);
 	ampModEg.gain(0.1);
 	ampOsc3Mod.gain(1);
+	masterVolume.gain(1.0);
 
 	osc1Waveform.frequencyModulation(MAX_OCTAVE);
 	osc2Waveform.frequencyModulation(MAX_OCTAVE);
@@ -337,7 +351,7 @@ void setup() {
 	delay(1000);
 
 	digitalWrite(13, 0);
-	delay(100);
+	delay(200);
 
 // Blink. For debug. And letting a bit more time to Mega 1 to start.
 	for(uint8_t i = 0; i < 5; ++i){
@@ -356,17 +370,17 @@ void setup() {
 void loop() {
 	midi1.read();
 	midi2.read();
+	usbMIDI.read(midiInChannel);
 }
 
 void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
-//	MIDI.sendNoteOn(note, velocity, 1);
 /*
 	Serial.print("playing :");
 	Serial.println(note);
 */
 	nowPlaying = note;
 	float fineTune = detuneTable[note] * detuneCoeff[detune];
-	float duration = (float)glideEn * (float)glide * 3.75;
+	float duration = 1.0 + (float)glideEn * (float)glide * 3.75;
 	float level = ((float)note + 12 * transpose) * HALFTONE_TO_DC;
 	level += fineTune;
 	float filterLevel = (((float)note - FILTER_BASE_NOTE) + (12 * transpose)) * FILTER_HALFTONE_TO_DC;
@@ -383,8 +397,6 @@ void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
 }
 
 void noteOff(){
-//	MIDI.sendNoteOff(nowPlaying, 0, 1);
-
 	AudioNoInterrupts();
 	filterEnvelope.noteOff();
 	mainEnvelope.noteOff();
@@ -474,6 +486,7 @@ void handleInternalNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 		handleKeyboardFunction(note, 1);
 		return;
 	}
+	usbMIDI.sendNoteOn(note + MIDI_OFFSET + 12 * transpose, velocity, midiOutChannel);
 	handleNoteOn(channel, note + MIDI_OFFSET, velocity);
 }
 
@@ -554,6 +567,7 @@ void handleInternalNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 //		handleKeyboardFunction(note, 0);
 		return;
 	}
+	usbMIDI.sendNoteOff(note + MIDI_OFFSET + 12 * transpose, 0, midiOutChannel);
 	handleNoteOff(channel, note + MIDI_OFFSET, velocity);
 }
 
@@ -636,7 +650,7 @@ void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 
 void handlePitchBend(uint8_t channel, int16_t bend){
 //	dcPitchBend.amplitude(((float)bend - PITCH_BEND_NEUTRAL) / PITCH_BEND_COURSE);	// Pitch bend goes from -168 to 134.
-	dcPitchBend.amplitude(((float)bend) / 8190);
+//	dcPitchBend.amplitude(((float)bend) / 8190);
 	// neutral at -11 from up, -24 from down. :/
 //	MIDI.sendPitchBend(bend - PITCH_BEND_NEUTRAL, 0);
 /*
@@ -690,6 +704,9 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_PORTAMENTO_TIME:
 		// CC_5
+			break;
+		case CC_CHANNEL_VOL:
+		// CC_7
 			break;
 		case CC_OSC_TUNE:
 		// CC_9
@@ -773,6 +790,10 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 		// CC_37
 			glide = longValue;
 			break;
+		case CC_CHANNEL_VOL_LSB:
+		// CC_39
+			masterVolume.gain((float)longValue / RESO);
+			break;
 		case CC_OSC_TUNE_LSB:
 		// CC_41
 			dcOscTune.amplitude(HALFTONE_TO_DC * 2 * ((float)longValue - HALF_RESO) / RESO);
@@ -807,15 +828,22 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_FILTER_BAND_LSB:
 		// CC_51
+			filterBandValue = longValue;
 			AudioNoInterrupts();
-			if(longValue < HALF_RESO){
-				bandMixer.gain(0, ((float)HALF_RESO - (float)longValue) / HALF_RESO);
-				bandMixer.gain(1, (float)longValue / HALF_RESO);
-				bandMixer.gain(2, 0.0);
-			} else {
-				bandMixer.gain(0, 0.0);
-				bandMixer.gain(1, ((float)RESO - (float)longValue) / HALF_RESO);
-				bandMixer.gain(2, ((float)longValue - HALF_RESO) / HALF_RESO);
+			if(filterMode == FILTER_BAND_PASS){
+				if(longValue < HALF_RESO){
+					bandMixer.gain(0, ((float)HALF_RESO - (float)longValue) / HALF_RESO);
+					bandMixer.gain(1, (float)longValue / HALF_RESO);
+					bandMixer.gain(2, 0.0);
+				} else {
+					bandMixer.gain(0, 0.0);
+					bandMixer.gain(1, ((float)RESO - (float)longValue) / HALF_RESO);
+					bandMixer.gain(2, ((float)longValue - HALF_RESO) / HALF_RESO);
+				}
+			} else if(filterMode == FILTER_BAND_STOP){
+				bandMixer.gain(0, (float)(RESO - longValue) / RESO);
+				bandMixer.gain(1, 0.0);
+				bandMixer.gain(2, (float)longValue / RESO);
 			}
 			AudioInterrupts();
 			break;
@@ -833,7 +861,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_FILTER_ATTACK_LSB:
 		// CC_55
-			filterEnvelope.attack((float)longValue * 5.0);
+			filterEnvelope.attack(1 + (float)longValue * 5.0);
 			break;
 		case CC_FILTER_DECAY_LSB:
 		// CC_56
@@ -845,11 +873,11 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_FILTER_RELEASE_LSB:
 		// CC_58
-			filterEnvelope.release((float)longValue * 5.0);
+			filterEnvelope.release(1 + (float)longValue * 5.0);
 			break;
 		case CC_EG_ATTACK_LSB:
 		// CC_59
-			mainEnvelope.attack((float)longValue * 5.0);
+			mainEnvelope.attack(1 + (float)longValue * 5.0);
 			break;
 		case CC_EG_DECAY_LSB:
 		// CC_60
@@ -861,7 +889,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_EG_RELEASE_LSB:
 		// CC_62
-			mainEnvelope.release((float)longValue * 5.0);
+			mainEnvelope.release(1 + (float)longValue * 5.0);
 			break;
 		case CC_LFO_RATE_LSB:
 		// CC_63
@@ -1047,15 +1075,15 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 	}
 }
 
-void handleKeyboardFunction(uint8_t note, bool active){
+void handleKeyboardFunction(uint8_t key, bool active){
 
 	//
 /*
 	Serial.print("key pressed : ");
-	Serial.println(note);
+	Serial.println(key);
 */
 	// Change function
-	switch(note){
+	switch(key){
 		case 0:
 		// lower DO
 			currentFunction = FUNCTION_KEYBOARD_MODE;
@@ -1078,61 +1106,84 @@ void handleKeyboardFunction(uint8_t note, bool active){
 			break;
 		case 7:
 		// lower SOL
-			currentFunction = FUNCTION_MIDI_IN_CHANNEL;
-//			Serial.println("midi in channel");
+			currentFunction = FUNCTION_FILTER_MODE;
 			break;
 		case 9:
 		// lower LA
+			currentFunction = FUNCTION_MIDI_IN_CHANNEL;
+//			Serial.println("midi in channel");
+			break;
+		case 11:
+		// lower SI
 			currentFunction = FUNCTION_MIDI_OUT_CHANNEL;
 //			Serial.println("midi out channel");
 			break;
-		case 11:
-		// lower Si
-			break;
 		default:
-			if(note < 12) return;
-			note -= 12;
+			if(key < 12) return;
+			key -= 12;
 			break;
 	}
 
 	switch(currentFunction){
 		case FUNCTION_KEYBOARD_MODE:
-			if(note > KEY_UPPER) return;
-			keyMode = (keyMode_t)note;
+			if(key > KEY_UPPER) return;
+			keyMode = (keyMode_t)key;
 			EEPROM.put(EE_KEYBOARD_MODE_ADD, keyMode);
 			break;
 		case FUNCTION_RETRIGGER:
-			if(note > 1) return;
-			noteRetrigger = note;
+			if(key > 1) return;
+			noteRetrigger = key;
 			EEPROM.put(EE_TRIGGER_ADD, noteRetrigger);
 			break;
 		case FUNCTION_DETUNE:
-			if(note > DETUNE_RESET) return;
-			if(note == DETUNE_RESET){
+			if(key > DETUNE_RESET) return;
+			if(key == DETUNE_RESET){
 				// run a new detuning table
 				resetDetuneTable();
 			} else {
-				detune = (detune_t)note;
+				detune = (detune_t)key;
 				EEPROM.put(EE_DETUNE_ADD, detune);
 			}
 			break;
 		case FUNCTION_BITCRUSH:
-			if(note > 12) return;
-			note += 4;
-			bitCrushOutput.bits(note);
-			EEPROM.put(EE_BITCRUSH_ADD, note);
+			if(key > 12) return;
+			key += 4;
+			bitCrushOutput.bits(key);
+			EEPROM.put(EE_BITCRUSH_ADD, key);
 			break;
+		case FUNCTION_FILTER_MODE:
+			if(key > 1) return;
+			filterMode = (filterMode_t)key;
+			EEPROM.put(EE_FILTER_MODE, filterMode);
+			AudioNoInterrupts();
+			if(filterMode == FILTER_BAND_PASS){
+				if(filterBandValue < HALF_RESO){
+					bandMixer.gain(0, ((float)HALF_RESO - (float)filterBandValue) / HALF_RESO);
+					bandMixer.gain(1, (float)filterBandValue / HALF_RESO);
+					bandMixer.gain(2, 0.0);
+				} else {
+					bandMixer.gain(0, 0.0);
+					bandMixer.gain(1, ((float)RESO - (float)filterBandValue) / HALF_RESO);
+					bandMixer.gain(2, ((float)filterBandValue - HALF_RESO) / HALF_RESO);
+				}
+			} else if(filterMode == FILTER_BAND_STOP){
+				bandMixer.gain(0, (float)(RESO - filterBandValue) / RESO);
+				bandMixer.gain(1, 0.0);
+				bandMixer.gain(2, (float)filterBandValue / RESO);
+			}
+			AudioInterrupts();
+			break;			
 		case FUNCTION_MIDI_IN_CHANNEL:
 			// change (usb) midi in channel
-			if(note > 16)return;
-			midiInChannel = note;
+			if(key > 16)return;
+			midiInChannel = key + 1;
 			//MIDI.begin(midiInChannel);
 			EEPROM.put(EE_MIDI_IN_CH_ADD, midiInChannel);
 			break;
 		case FUNCTION_MIDI_OUT_CHANNEL:
 			// change (usb) midi out channel
-			if(note > 16)return;
-			midiOutChannel = note;
+			if(key > 16)return;
+			midiOutChannel = key + 1;
 			//MIDI.begin(midiInChannel);
 			EEPROM.put(EE_MIDI_OUT_CH_ADD, midiOutChannel);
 			break;

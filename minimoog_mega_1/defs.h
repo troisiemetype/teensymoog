@@ -160,7 +160,7 @@
 // #define CC_FOOT_CTRL					CC4
 #define CC_PORTAMENTO_TIME				CC5
 // #define CC_DATA_ENTRY_MSB				CC6
-// #define CC_CHANNEL_VOL					CC7
+#define CC_CHANNEL_VOL					CC7
 // #define CC_BALANCE						CC8
 #define CC_OSC_TUNE						CC9
 // #define CC_PAN							CC10
@@ -192,7 +192,7 @@
 // #define CC_FOOT_CTRL_LSB				CC36
 #define CC_PORTAMENTO_TIME_LSB			CC37
 // #define CC_DATA_ENTRY_MSB_LSB			CC38
-// #define CC_CHANNEL_VOL_LSB				CC39
+#define CC_CHANNEL_VOL_LSB				CC39
 // #define CC_BALANCE_LSB					CC40
 #define CC_OSC_TUNE_LSB					CC41
 // #define CC_PAN_LSB						CC42

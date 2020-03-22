@@ -1,24 +1,38 @@
 Keyboard mode
-	first
-	last
-	lower
-	upper
+				note : in any case, when there are several notes pressed, releasing one will trigger another, according to priority mode.
+	first		The first key pressed has priority. It must be released for another to trigger note
+	last		Last key pressed triggers new note.
+	lower		The lower key on the keyboard has priority
+	upper		The upper key has priority
 
 Bitcrush
+				bit crusher : reduce resolution of the samples before output
 	4 - 16
 
 Midi in channel
+				the channel the synth reacts to when connected to USB MIDI
 	1 - 16
 
 Midi out channel
+				the channel the synths sends on
 	1 - 16
 
 Retrigger
+				when a key is pressed and there was already one (or several), retrigger the envelope or no
 	0 / 1
 
 Detune
+				Add a small amount of detune to each note, to simulate a resistor ladder vintage keyboard
 	off
 	soft
 	medium
 	hard
 	reset
+
+filter mode
+				The filter band can be changed steplessly from low pass to high pass.
+				This gives the choice of how it behave at mid course
+	Band pass	The lower half of the control mixes low pass with band pass. High pass cut.
+				The upper half mixes band pass with high pass. Low pass cut.
+	Band stop	The low and high pass are mixed continuously, band pass cut, resulting in a band stop
+				on middle position.

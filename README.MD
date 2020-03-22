@@ -28,6 +28,14 @@ The main and lateral control panels, control panel bottom and rear enclosure are
 
 There was no sketch made for the walnut enclosure, but I should have done some : it's quite thin (around 7cm tall), and it gave me headaches to integrate some components in it. There is plenty of room, but I had to change things several time to accomodate the keyboard height, the front panel with sontrols and the rear panel with plugs...
 
+#### Dependencies
+Apart from Teensy audio, this program uses a few libraries.
+[Arduino Midi library by FortySevenEffects](https://github.com/FortySevenEffects/arduino_midi_library), for internal communication between the boards. It's the one implemented by Teensy for usb MIDI, very complete.
+
+[PushButton](https://github.com/troisiemetype/PushButton) is used to debounce all switches, and detect changes.
+
+[expFilter](https://github.com/troisiemetype/expfilter) is used to smooth ADC readings. It gives a result close to a running average, but without the need of big tables to store results.
+
 ## Function implemented
 As said above, the goal is to have something looking as close as possible to the original Minimoog.
 
@@ -51,7 +59,7 @@ Maybe external input will be implemented once, but I wanted this feedback.
 the mixer is copy-paste on the original minimoog : a potentiometer for each of the five channels, and a switch for rapid on / off.
 
 ### Filter
-The filter is (I believe) close from the minimoog one. Cutoff frequency and emphasis (resonance) are available. Their is an associated envelope generator that modulates the cutoff frequency. Their is also an addition compared to the minimoog : there is a knob to slide continuously from low pass to band pass, to high pass filter.
+The filter is (I believe) close from the minimoog one. Cutoff frequency and emphasis (resonance) are available. Their is an associated envelope generator that modulates the cutoff frequency. Their is also an addition compared to the minimoog : there is a knob to slide continuously from low pass to band pass, to high pass filter. It can also slide continuously from low pass to high pass, thus resulting in a band stop filter at mid-course. (see _functions_ above)
 
 ### Envelope generator
 There are two envelope generators : one for the filter, the other for the global sound shape. On the original minimoog, decay can be used (_via_ a switch) to add release to notes. On this one a knob is there for, so this is a classic ADSR envelope.
@@ -94,6 +102,11 @@ The detune table stores a fix detune coefficient for each of all 128 MIDI notes.
 #### Bitcrush
 Output resolution can be changed. The default is 16 bits, but any bitsize between 4 and 16 can be choose.
 The bitcrushing is applied at the end of the audio stream, just before the i2s / USB output.
+
+#### Filter mode
+The filter band knob slide continuously from low pass to high pass. It can be choosen wether :
+* it slides from low pass to band pass for the lower half (high pass cut), and from band pass to high pass in the upper half (low pass cut), or
+* it slides continuously from low pass to high pass, thus resulting in a band stop filter when knob is centered. (well, kind of : having a true band stop filter would mean to mix two different filters with frequency offsets. Here they overlap.)
 
 #### MIDI channel setting
 The MIDI channel the synth listens and emit on when connected _via_ USB can be changed. Any channel from 1 to 16.

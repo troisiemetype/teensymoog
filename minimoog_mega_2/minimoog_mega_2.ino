@@ -49,6 +49,8 @@
  *					decay 				pot 		A12				CC  28
  *					sustain 			pot 		A13 			CC  29
  *					release				pot 		A14				CC  30
+ * Mixer
+ *					master volume		pot 		A15				CC  07
  * Communication
  *					TX1 to teensy					18
  *					RX1 from teensy					19
@@ -63,8 +65,8 @@
 
 // Constants
 const uint8_t NUM_SWITCHES = 3;
-const uint8_t NUM_POTS = 15;
-const uint8_t POT_FILTER_COEF = 15;
+const uint8_t NUM_POTS = 16;
+const uint8_t POT_FILTER_COEF = 20;
 
 // Note : pins are defined via tables, to improve code efficiency.
 // Digital pin definition
@@ -93,7 +95,7 @@ const uint8_t APIN_SUSTAIN = A13;
 const uint8_t APIN_RELEASE = A14;
 */
 
-const uint8_t APIN[NUM_POTS] = {A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14};
+const uint8_t APIN[NUM_POTS] = {A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15};
 
 // Variables
 uint16_t potState[NUM_POTS];
@@ -213,6 +215,9 @@ void updateControls(){
 				break;
 			case 14:
 				controlChange = CC_EG_RELEASE;
+				break;
+			case 15:
+				controlChange = CC_CHANNEL_VOL;
 				break;
 			default:
 				continue;
