@@ -86,6 +86,12 @@ const int16_t PITCH_BEND_MIN = -168;
 const int16_t PITCH_BEND_MAX = 134;
 const int16_t PITCH_BEND_NEUTRAL = PITCH_BEND_MIN + (PITCH_BEND_MAX - PITCH_BEND_MIN) / 2;
 const int16_t PITCH_BEND_COURSE = PITCH_BEND_MAX - PITCH_BEND_MIN;
+
+// Maximum attack, decay, release and glide time (in milliseconds)
+const float MAX_ATTACK_TIME = 10000;
+const float MAX_DECAY_TIME = 10000;
+const float MAX_RELEASE_TIME = 10000;
+const float MAX_GLIDE_TIME = 10000;
 /*
 // Moved to Mega 1
 const uint16_t MOD_WHEEL_MIN = 360;
@@ -111,7 +117,7 @@ uint8_t internalMidiChannel = 1;
 uint8_t midiInChannel = 1;
 uint8_t midiOutChannel = 1;
 
-uint16_t glide = 0;
+float glide = 0;
 bool glideEn  = 0;
 
 bool noteRetrigger = 1;
@@ -199,6 +205,8 @@ MIDI_CREATE_DEFAULT_INSTANCE();
 MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial1, midi1, midiSettings);
 MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial4, midi2, midiSettings);
 
+// for debug purpose, to send to serial the CPU used by audio library.
+// Timer timerCPU;
 
 void setup() {
 	pinMode(13, OUTPUT);
@@ -365,12 +373,26 @@ void setup() {
 	midi1.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
 	midi2.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
 
+/*
+	timerCPU.init();
+	timerCPU.setDelay(500);
+	timerCPU.start(Timer::LOOP);
+	Serial.print("max CPU usage");
+	Serial.println(AudioProcessorUsageMax());
+*/
+
 }
 
 void loop() {
 	midi1.read();
 	midi2.read();
 	usbMIDI.read(midiInChannel);
+/*
+	if(timerCPU.update()){
+		Serial.print("cpu usage :");
+		Serial.println(AudioProcessorUsage());
+	}
+*/
 }
 
 void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
@@ -380,7 +402,8 @@ void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
 */
 	nowPlaying = note;
 	float fineTune = detuneTable[note] * detuneCoeff[detune];
-	float duration = 1.0 + (float)glideEn * (float)glide * 3.75;
+//	float duration = 1.0 + (float)glideEn * (float)glide * 3.75;
+	float duration = 1.0 + (float)glideEn * glide * MAX_GLIDE_TIME;
 	float level = ((float)note + 12 * transpose) * HALFTONE_TO_DC;
 	level += fineTune;
 	float filterLevel = (((float)note - FILTER_BASE_NOTE) + (12 * transpose)) * FILTER_HALFTONE_TO_DC;
@@ -669,6 +692,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 	Serial.println(command);
 */
 	uint16_t longValue = 0;
+	float rampValue = 0;
 	if(command < 32){
 		ccTempValue[command] = value;
 /*
@@ -682,12 +706,13 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 		longValue = (uint16_t)ccTempValue[command - 32];
 		longValue <<= 7;
 		longValue += value;
+		rampValue = pow((float)longValue / RESO, 2);
 /*
-		Serial.print("value : ");
+		Serial.print("value :    ");
 		Serial.println(longValue);
-		Serial.print(" (sent : ");
-		Serial.print(value);
-		Serial.println(')');
+		Serial.print("ramp value : ");
+		Serial.println(rampValue * 1000);
+		Serial.println();
 */
 	} else {
 /*
@@ -788,7 +813,8 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_PORTAMENTO_TIME_LSB:
 		// CC_37
-			glide = longValue;
+//			glide = longValue;
+			glide = rampValue;
 			break;
 		case CC_CHANNEL_VOL_LSB:
 		// CC_39
@@ -861,11 +887,15 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_FILTER_ATTACK_LSB:
 		// CC_55
-			filterEnvelope.attack(1 + (float)longValue * 5.0);
+			// original : linear attack
+//			filterEnvelope.attack(1 + (float)longValue * 5.0);
+			filterEnvelope.attack(rampValue * MAX_ATTACK_TIME);
+
 			break;
 		case CC_FILTER_DECAY_LSB:
 		// CC_56
-			filterEnvelope.decay((float)longValue * 5.0);
+//			filterEnvelope.decay((float)longValue * 5.0);
+			filterEnvelope.decay(rampValue * MAX_ATTACK_TIME);
 			break;
 		case CC_FILTER_SUSTAIN_LSB:
 		// CC_57
@@ -873,15 +903,18 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_FILTER_RELEASE_LSB:
 		// CC_58
-			filterEnvelope.release(1 + (float)longValue * 5.0);
+//			filterEnvelope.release(1 + (float)longValue * 5.0);
+			filterEnvelope.release(rampValue * MAX_ATTACK_TIME);
 			break;
 		case CC_EG_ATTACK_LSB:
 		// CC_59
-			mainEnvelope.attack(1 + (float)longValue * 5.0);
+//			mainEnvelope.attack(1 + (float)longValue * 5.0);
+			mainEnvelope.attack(rampValue * MAX_ATTACK_TIME);
 			break;
 		case CC_EG_DECAY_LSB:
 		// CC_60
-			mainEnvelope.decay((float)longValue * 5.0);
+//			mainEnvelope.decay((float)longValue * 5.0);
+			mainEnvelope.decay(rampValue * MAX_ATTACK_TIME);
 			break;
 		case CC_EG_SUSTAIN_LSB:
 		// CC_61
@@ -889,7 +922,8 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_EG_RELEASE_LSB:
 		// CC_62
-			mainEnvelope.release(1 + (float)longValue * 5.0);
+//			mainEnvelope.release(1 + (float)longValue * 5.0);
+			mainEnvelope.release(rampValue * MAX_ATTACK_TIME);
 			break;
 		case CC_LFO_RATE_LSB:
 		// CC_63
