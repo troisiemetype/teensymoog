@@ -276,7 +276,7 @@
 // #define CC_ALL_SOUND_OFF 				CC120
 // #define CC_RST_ALL_CTRL 				CC121
 // #define CC_LOCAL_CTRL_ON_OFF 			CC122
-// #define CC_ALL_NOTE_OFF 				CC123
+#define CC_ALL_NOTE_OFF 				CC123
 // #define CC_OMNI_MODE_OFF 				CC124
 // #define CC_OMNI_MODE_ON 				CC125
 // #define CC_MONO_MODE_ON 				CC126

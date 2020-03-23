@@ -78,14 +78,17 @@ const float FILTER_BASE_NOTE = (log(FILTER_BASE_FREQUENCY / NOTE_MIDI_0)) / (log
 
 const float MAX_MIX = 1.0;
 
-const uint16_t RESO = 1024;
+// pots never go full clockwise... :/
+const uint16_t RESO = 1010;
 const uint16_t HALF_RESO = RESO / 2;
 
 // To be put in Mega1 sketch, so it sends a value on 14 bits.
-const int16_t PITCH_BEND_MIN = -168;
-const int16_t PITCH_BEND_MAX = 134;
+//343 - 492 - 500 - 651
+const int16_t PITCH_BEND_MIN = 343;
+const int16_t PITCH_BEND_MAX = 651;
 const int16_t PITCH_BEND_NEUTRAL = PITCH_BEND_MIN + (PITCH_BEND_MAX - PITCH_BEND_MIN) / 2;
 const int16_t PITCH_BEND_COURSE = PITCH_BEND_MAX - PITCH_BEND_MIN;
+const float PITCH_BEND_INTERNAL_TO_MIDI = 8192.0 / PITCH_BEND_COURSE;
 
 // Maximum attack, decay, release and glide time (in milliseconds)
 const float MAX_ATTACK_TIME = 10000;
@@ -109,6 +112,7 @@ const uint16_t EE_MIDI_OUT_CH_ADD = 3;
 const uint16_t EE_TRIGGER_ADD = 4;
 const uint16_t EE_DETUNE_ADD = 5;
 const uint16_t EE_FILTER_MODE = 6;
+const uint16_t EE_PITCH_BEND_RANGE = 7;
 const uint16_t EE_DETUNE_TABLE_ADD = 20;
 
 // variables
@@ -136,6 +140,8 @@ float egDecay = 0;
 
 int16_t filterBandValue = 0;
 
+uint8_t pitchBendRange = 3;
+
 // Waveforms
 uint8_t waveforms[6] = {WAVEFORM_SINE, WAVEFORM_TRIANGLE, WAVEFORM_SAWTOOTH,
 						WAVEFORM_SAWTOOTH_REVERSE, WAVEFORM_SQUARE, WAVEFORM_PULSE};
@@ -161,6 +167,7 @@ enum function_t{
 	FUNCTION_FILTER_MODE,
 	FUNCTION_MIDI_IN_CHANNEL,
 	FUNCTION_MIDI_OUT_CHANNEL,
+	FUNCTION_PITCH_BEND_RANGE,
 };
 
 function_t currentFunction = FUNCTION_KEYBOARD_MODE;
@@ -223,7 +230,7 @@ void setup() {
 	midi1.turnThruOff();
 	midi1.setHandleNoteOn(handleInternalNoteOn);
 	midi1.setHandleNoteOff(handleInternalNoteOff);
-	midi1.setHandlePitchBend(handlePitchBend);
+	midi1.setHandlePitchBend(handleInternalPitchBend);
 	midi1.setHandleControlChange(handleControlChange);
 
 	midi2.begin(1);
@@ -241,6 +248,7 @@ void setup() {
 	EEPROM.get(EE_TRIGGER_ADD, noteRetrigger);
 	EEPROM.get(EE_DETUNE_ADD, detune);
 	EEPROM.get(EE_FILTER_MODE, filterMode);
+	EEPROM.get(EE_PITCH_BEND_RANGE, pitchBendRange);
 
 	uint16_t address = EE_DETUNE_TABLE_ADD;
 	for(uint16_t i = 0; i < 128; ++i){
@@ -271,7 +279,7 @@ void setup() {
 	dcPulse.amplitude(-0.95);
 
 	// amp
-	ampPitchBend.gain(3 * HALFTONE_TO_DC * 2);
+	ampPitchBend.gain(pitchBendRange * HALFTONE_TO_DC * 2);
 	ampModWheel.gain(0.0);
 	ampPreFilter.gain(1.0);
 	ampModEg.gain(0.1);
@@ -671,15 +679,20 @@ void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 
 }
 
-void handlePitchBend(uint8_t channel, int16_t bend){
-//	dcPitchBend.amplitude(((float)bend - PITCH_BEND_NEUTRAL) / PITCH_BEND_COURSE);	// Pitch bend goes from -168 to 134.
-//	dcPitchBend.amplitude(((float)bend) / 8190);
-	// neutral at -11 from up, -24 from down. :/
-//	MIDI.sendPitchBend(bend - PITCH_BEND_NEUTRAL, 0);
+void handleInternalPitchBend(uint8_t channel, int16_t bend){
+	if(function) handlePitchBendFunction();
+	int16_t bendAmount = (bend - PITCH_BEND_NEUTRAL) * PITCH_BEND_INTERNAL_TO_MIDI;
+	handlePitchBend(channel, bendAmount);
+	MIDI.sendPitchBend(bendAmount, 0);
 /*
 	Serial.print("pitch bend :");
 	Serial.println(bend);
 */
+}
+
+void handlePitchBend(uint8_t channel, int16_t bend){
+	dcPitchBend.amplitude(((float)bend) / 8190);
+	// neutral at -11 from u(bend - PITCH_BEND_NEUTRAL) * PITCH_BEND_INTERNAL_TO_MIDIp, -24 from down. :/
 }
 
 void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
@@ -1022,6 +1035,7 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			if(value < 64){
 				noteOff();
 				keyTrackIndex = 0;
+				usbMIDI.sendControlChange(CC_ALL_NOTE_OFF, 0, midiOutChannel);
 				function = 1;
 //				Serial.println("enterring function mode");
 			} else {
@@ -1103,6 +1117,11 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 				lfoWaveform.amplitude(0.5);
 			}
 			AudioInterrupts();
+			break;
+		case CC_ALL_NOTE_OFF:
+		// CC_123
+			noteOff();
+			keyTrackIndex = 0;
 			break;
 		default:
 			break;
@@ -1221,10 +1240,21 @@ void handleKeyboardFunction(uint8_t key, bool active){
 			//MIDI.begin(midiInChannel);
 			EEPROM.put(EE_MIDI_OUT_CH_ADD, midiOutChannel);
 			break;
+		case FUNCTION_PITCH_BEND_RANGE:
+			// Change pitch bend range
+			if((key < 1) || (key > 16)) return;
+			pitchBendRange = key;
+			ampPitchBend.gain(pitchBendRange * HALFTONE_TO_DC * 2);
+			EEPROM.put(EE_PITCH_BEND_RANGE, pitchBendRange);
+			break;
 		default:
 			break;		
 	}
 
+}
+
+void handlePitchBendFunction(){
+	currentFunction = FUNCTION_PITCH_BEND_RANGE;
 }
 
 void handleCCFunction(uint8_t command, uint8_t value){
