@@ -113,6 +113,8 @@ const uint16_t EE_TRIGGER_ADD = 4;
 const uint16_t EE_DETUNE_ADD = 5;
 const uint16_t EE_FILTER_MODE = 6;
 const uint16_t EE_PITCH_BEND_RANGE = 7;
+const uint16_t EE_MOD_WHEEL_OSC_RANGE = 8;
+const uint16_t EE_MOD_WHEEL_FILTER_RANGE = 9;
 const uint16_t EE_DETUNE_TABLE_ADD = 20;
 
 // variables
@@ -141,6 +143,8 @@ float egDecay = 0;
 int16_t filterBandValue = 0;
 
 uint8_t pitchBendRange = 3;
+uint8_t modWheelOscRange = 3;
+uint8_t modWheelFilterRange = 12;
 
 // Waveforms
 uint8_t waveforms[6] = {WAVEFORM_SINE, WAVEFORM_TRIANGLE, WAVEFORM_SAWTOOTH,
@@ -168,6 +172,8 @@ enum function_t{
 	FUNCTION_MIDI_IN_CHANNEL,
 	FUNCTION_MIDI_OUT_CHANNEL,
 	FUNCTION_PITCH_BEND_RANGE,
+	FUNCTION_MOD_WHEEL_OSC_RANGE,
+	FUNCTION_MOD_WHEEL_FILTER_RANGE,
 };
 
 function_t currentFunction = FUNCTION_KEYBOARD_MODE;
@@ -249,7 +255,8 @@ void setup() {
 	EEPROM.get(EE_TRIGGER_ADD, noteRetrigger);
 	EEPROM.get(EE_DETUNE_ADD, detune);
 	EEPROM.get(EE_FILTER_MODE, filterMode);
-	EEPROM.get(EE_PITCH_BEND_RANGE, pitchBendRange);
+	EEPROM.get(EE_MOD_WHEEL_OSC_RANGE, modWheelOscRange);
+	EEPROM.get(EE_MOD_WHEEL_FILTER_RANGE, modWheelFilterRange);
 
 	uint16_t address = EE_DETUNE_TABLE_ADD;
 	for(uint16_t i = 0; i < 128; ++i){
@@ -281,7 +288,8 @@ void setup() {
 
 	// amp
 	ampPitchBend.gain(pitchBendRange * HALFTONE_TO_DC * 2);
-	ampModWheel.gain(0.0);
+	ampModWheelOsc.gain(0.0);
+	ampModWheelFilter.gain(0.0);
 	ampPreFilter.gain(0.55);
 	ampModEg.gain(0.1);
 	ampOsc3Mod.gain(1);
@@ -828,8 +836,9 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_MOD_WHEEL_LSB:
 		// CC_33
-//			ampModWheel.gain(((float)longValue - 1 - MOD_WHEEL_MIN) / 12 / MOD_WHEEL_COURSE);
-			ampModWheel.gain(((float)longValue) / 12 / 16384);
+//			ampModWheelOsc.gain(((float)longValue - 1 - MOD_WHEEL_MIN) / 12 / MOD_WHEEL_COURSE);
+			ampModWheelOsc.gain(((float)(longValue * modWheelOscRange)) / MAX_OCTAVE / 12 / 16384);
+			ampModWheelFilter.gain(((float)(longValue * modWheelFilterRange)) / FILTER_MAX_OCTAVE / 12 / 16384);
 			// Mod wheel goes from 360 to 666.
 /*
 			Serial.print("mod wheel : ");
@@ -1247,14 +1256,14 @@ void handleKeyboardFunction(uint8_t key, bool active){
 			break;			
 		case FUNCTION_MIDI_IN_CHANNEL:
 			// change (usb) midi in channel
-			if(key > 16)return;
+			if(key > 15)return;
 			midiInChannel = key + 1;
 			//MIDI.begin(midiInChannel);
 			EEPROM.put(EE_MIDI_IN_CH_ADD, midiInChannel);
 			break;
 		case FUNCTION_MIDI_OUT_CHANNEL:
 			// change (usb) midi out channel
-			if(key > 16)return;
+			if(key > 15)return;
 			midiOutChannel = key + 1;
 			//MIDI.begin(midiInChannel);
 			EEPROM.put(EE_MIDI_OUT_CH_ADD, midiOutChannel);
@@ -1265,6 +1274,21 @@ void handleKeyboardFunction(uint8_t key, bool active){
 			pitchBendRange = key;
 			ampPitchBend.gain(pitchBendRange * HALFTONE_TO_DC * 2);
 			EEPROM.put(EE_PITCH_BEND_RANGE, pitchBendRange);
+			break;
+		case FUNCTION_MOD_WHEEL_OSC_RANGE:
+			// Change mod wheel range for osc
+			if(key == 0){
+				currentFunction = FUNCTION_MOD_WHEEL_FILTER_RANGE;
+				break;
+			}
+			modWheelOscRange = key;
+			EEPROM.put(EE_MOD_WHEEL_OSC_RANGE, modWheelOscRange);
+			break;
+		case FUNCTION_MOD_WHEEL_FILTER_RANGE:
+			// Change mod wheel range for osc
+			if(key == 0) break;
+			modWheelFilterRange = key;
+			EEPROM.put(EE_MOD_WHEEL_FILTER_RANGE, modWheelFilterRange);
 			break;
 		default:
 			break;		
@@ -1278,6 +1302,9 @@ void handlePitchBendFunction(){
 
 void handleCCFunction(uint8_t command, uint8_t value){
 	switch(command){
+		case CC_MOD_WHEEL:
+			currentFunction = FUNCTION_MOD_WHEEL_OSC_RANGE;
+			break;
 		case CC_FUNCTION:
 			// CC_113
 			if(value < 64){

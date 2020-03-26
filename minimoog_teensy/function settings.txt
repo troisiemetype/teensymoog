@@ -36,3 +36,9 @@ filter mode
 				The upper half mixes band pass with high pass. Low pass cut.
 	Band stop	The low and high pass are mixed continuously, band pass cut, resulting in a band stop
 				on middle position.
+
+pitchbend range
+				Any interval regarding the note beeing played can be choosen for the pitchbend.
+
+modulation range
+				The modulation range can be changed independently for the oscillators and for the filter.

@@ -77,9 +77,12 @@ Portamento can be from 0 to ten seconds, and switch on and off.
 There is +- 2 octave transpose available to compensate the only 2 1/2 octave from the keyboard.
 
 ### Function settings
-There are "hidden" settings available through a function switch. When turn on, the keyboard can be used to change the behavior of some things. Each of this setting is saved when powered off.
+There are "hidden" settings available through a function switch. When turn on, the keyboard can be used to change the behavior of some things. Each of this setting is saved when power is turned off.
+The first octave of the keyboard is used to select the setting to be changed, then keys from the second C used to set the new value.
 
 #### Keyboard priority mode
+_Function + C_
+
 This defines the way the keyboard behave. There are four mode available :
 1. lower note priority : a note will be played only if it's lower than the one already playing.
 1. first note priority : a note will be played only if no note is already playing.
@@ -88,9 +91,13 @@ This defines the way the keyboard behave. There are four mode available :
 In any case, ten notes are tracked, so when several key are pressed releasing a key will play another, according to their position or the order they was pressed.
 
 #### Note retrigger
+_Function + D_
+
 This defines how a new note is played. If some keys are already pressed when a new note is played, it can retrigger the envelopes, or let them to their state. This can be turned on or off.
 
 #### Keyboard detune
+_Function + E_
+
 The original minimoog has a resistor ladder keyboard, which implies small variations in tonality regarding a perfect pitch. This setting reproduce this by applying detune to each note and letting you choice : 
 1. off : perfect pitch for each key
 1. soft : lightly detuned, +-10% of a semitone
@@ -100,13 +107,31 @@ The original minimoog has a resistor ladder keyboard, which implies small variat
 The detune table stores a fix detune coefficient for each of all 128 MIDI notes.
 
 #### Bitcrush
+_Function + F_
+
 Output resolution can be changed. The default is 16 bits, but any bitsize between 4 and 16 can be choose.
 The bitcrushing is applied at the end of the audio stream, just before the i2s / USB output.
 
 #### Filter mode
-The filter band knob slide continuously from low pass to high pass. It can be choosen wether :
+_Function + G_
+
+The filter band knob slides continuously from low pass to high pass. It can be choosen wether :
 * it slides from low pass to band pass for the lower half (high pass cut), and from band pass to high pass in the upper half (low pass cut), or
 * it slides continuously from low pass to high pass, thus resulting in a band stop filter when knob is centered. (well, kind of : having a true band stop filter would mean to mix two different filters with frequency offsets. Here they overlap.)
 
 #### MIDI channel setting
+_Function + A_ for MIDI in
+
+_Function + B_ for MIDI out
+
 The MIDI channel the synth listens and emit on when connected _via_ USB can be changed. Any channel from 1 to 16.
+
+#### Pitchbend range
+_Function + pitchbend wheel move_
+
+The amount the pitch wheel bends a note above or bellow the note being played can be changed semitone by semitone.
+
+#### Modulation range
+_Function + modulation wheel move_
+
+As well as the pitch bend range can be changed, so does the modulation range. Pressing any key will set this interval according to second C, for the modulation applied to oscillators. Modulation applied to filter can be changed as well, by pressing second C before to set the new interval.

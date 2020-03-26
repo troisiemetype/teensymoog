@@ -28,7 +28,8 @@ AudioMixer4              osc3ControlMixer; //xy=855,156
 AudioMixer4              modMixer;       //xy=867,405
 AudioSynthWaveformDc     dcOsc2Tune;     //xy=1027,112
 AudioSynthWaveformDc     dcOsc3Tune;     //xy=1028,178
-AudioAmplifier           ampModWheel;    //xy=1081,405
+AudioAmplifier           ampModWheelOsc;    //xy=1077,385
+AudioAmplifier           ampModWheelFilter;           //xy=1084.5666809082031,420.566650390625
 AudioMixer4              osc3TuneMixer;  //xy=1211,174
 AudioMixer4              osc2TuneMixer;  //xy=1212,110
 AudioSynthWaveformDc     dcPulse;        //xy=1228,22
@@ -73,32 +74,33 @@ AudioConnection          patchCord21(modMix2, 0, modMixer, 1);
 AudioConnection          patchCord22(modMix1, 0, modMixer, 0);
 AudioConnection          patchCord23(dcOsc3, 0, osc3ControlMixer, 1);
 AudioConnection          patchCord24(osc3ControlMixer, 0, osc3TuneMixer, 0);
-AudioConnection          patchCord25(modMixer, ampModWheel);
-AudioConnection          patchCord26(dcOsc2Tune, 0, osc2TuneMixer, 1);
-AudioConnection          patchCord27(dcOsc3Tune, 0, osc3TuneMixer, 1);
-AudioConnection          patchCord28(ampModWheel, 0, filterMixer, 0);
-AudioConnection          patchCord29(ampModWheel, 0, mainTuneMixer, 3);
-AudioConnection          patchCord30(osc3TuneMixer, 0, osc3Waveform, 0);
-AudioConnection          patchCord31(osc2TuneMixer, 0, osc2Waveform, 0);
-AudioConnection          patchCord32(dcPulse, 0, osc1Waveform, 1);
-AudioConnection          patchCord33(dcPulse, 0, osc2Waveform, 1);
-AudioConnection          patchCord34(dcPulse, 0, osc3Waveform, 1);
-AudioConnection          patchCord35(osc1Waveform, 0, oscMixer, 0);
-AudioConnection          patchCord36(osc2Waveform, 0, oscMixer, 1);
-AudioConnection          patchCord37(osc3Waveform, 0, oscMixer, 2);
-AudioConnection          patchCord38(osc3Waveform, ampOsc3Mod);
-AudioConnection          patchCord39(oscMixer, 0, globalMixer, 0);
-AudioConnection          patchCord40(globalMixer, ampPreFilter);
-AudioConnection          patchCord41(ampPreFilter, 0, vcf, 0);
-AudioConnection          patchCord42(ampPreFilter, printPreFilter);
-AudioConnection          patchCord43(filterMixer, 0, vcf, 1);
-AudioConnection          patchCord44(vcf, 0, bandMixer, 0);
-AudioConnection          patchCord45(vcf, 1, bandMixer, 1);
-AudioConnection          patchCord46(vcf, 2, bandMixer, 2);
-AudioConnection          patchCord47(bandMixer, mainEnvelope);
-AudioConnection          patchCord48(bandMixer, 0, globalMixer, 1);
-AudioConnection          patchCord49(mainEnvelope, bitCrushOutput);
-AudioConnection          patchCord50(bitCrushOutput, masterVolume);
-AudioConnection          patchCord51(masterVolume, 0, i2s, 0);
-AudioConnection          patchCord52(masterVolume, 0, i2s, 1);
+AudioConnection          patchCord25(modMixer, ampModWheelOsc);
+AudioConnection          patchCord26(modMixer, ampModWheelFilter);
+AudioConnection          patchCord27(dcOsc2Tune, 0, osc2TuneMixer, 1);
+AudioConnection          patchCord28(dcOsc3Tune, 0, osc3TuneMixer, 1);
+AudioConnection          patchCord29(ampModWheelOsc, 0, mainTuneMixer, 3);
+AudioConnection          patchCord30(ampModWheelFilter, 0, filterMixer, 0);
+AudioConnection          patchCord31(osc3TuneMixer, 0, osc3Waveform, 0);
+AudioConnection          patchCord32(osc2TuneMixer, 0, osc2Waveform, 0);
+AudioConnection          patchCord33(dcPulse, 0, osc1Waveform, 1);
+AudioConnection          patchCord34(dcPulse, 0, osc2Waveform, 1);
+AudioConnection          patchCord35(dcPulse, 0, osc3Waveform, 1);
+AudioConnection          patchCord36(osc1Waveform, 0, oscMixer, 0);
+AudioConnection          patchCord37(osc2Waveform, 0, oscMixer, 1);
+AudioConnection          patchCord38(osc3Waveform, 0, oscMixer, 2);
+AudioConnection          patchCord39(osc3Waveform, ampOsc3Mod);
+AudioConnection          patchCord40(oscMixer, 0, globalMixer, 0);
+AudioConnection          patchCord41(globalMixer, ampPreFilter);
+AudioConnection          patchCord42(ampPreFilter, 0, vcf, 0);
+AudioConnection          patchCord43(ampPreFilter, printPreFilter);
+AudioConnection          patchCord44(filterMixer, 0, vcf, 1);
+AudioConnection          patchCord45(vcf, 0, bandMixer, 0);
+AudioConnection          patchCord46(vcf, 1, bandMixer, 1);
+AudioConnection          patchCord47(vcf, 2, bandMixer, 2);
+AudioConnection          patchCord48(bandMixer, mainEnvelope);
+AudioConnection          patchCord49(bandMixer, 0, globalMixer, 1);
+AudioConnection          patchCord50(mainEnvelope, bitCrushOutput);
+AudioConnection          patchCord51(bitCrushOutput, masterVolume);
+AudioConnection          patchCord52(masterVolume, 0, i2s, 0);
+AudioConnection          patchCord53(masterVolume, 0, i2s, 1);
 // GUItool: end automatically generated code
