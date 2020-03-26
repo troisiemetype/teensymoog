@@ -76,7 +76,7 @@ const float FILTER_HALFTONE_TO_DC = (float)1 / (FILTER_MAX_OCTAVE * 12);
 const float FILTER_BASE_FREQUENCY = 440.0;
 const float FILTER_BASE_NOTE = (log(FILTER_BASE_FREQUENCY / NOTE_MIDI_0)) / (log(NOTE_RATIO));
 
-const float MAX_MIX = 1.0;
+const float MAX_MIX = 0.32;
 
 // pots never go full clockwise... :/
 const uint16_t RESO = 1010;
@@ -214,6 +214,7 @@ MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial4, midi2, midiSettings);
 
 // for debug purpose, to send to serial the CPU used by audio library.
 // Timer timerCPU;
+// Timer timerGraph;
 
 void setup() {
 	pinMode(13, OUTPUT);
@@ -258,7 +259,7 @@ void setup() {
 	// TODO : check how to receive and transmit on different channels.
 	usbMIDI.setHandleNoteOn(handleNoteOn);
 	usbMIDI.setHandleNoteOff(handleNoteOff);
-//	usbMIDI.setHandlePitchBend(handlePitchBend);
+	usbMIDI.setHandlePitchChange(handlePitchBend);
 	usbMIDI.begin();
 
 
@@ -281,7 +282,7 @@ void setup() {
 	// amp
 	ampPitchBend.gain(pitchBendRange * HALFTONE_TO_DC * 2);
 	ampModWheel.gain(0.0);
-	ampPreFilter.gain(1.0);
+	ampPreFilter.gain(0.55);
 	ampModEg.gain(0.1);
 	ampOsc3Mod.gain(1);
 	masterVolume.gain(1.0);
@@ -381,6 +382,7 @@ void setup() {
 	midi1.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
 	midi2.sendControlChange(CC_ASK_FOR_DATA, 127, 1);
 
+
 /*
 	timerCPU.init();
 	timerCPU.setDelay(500);
@@ -388,7 +390,12 @@ void setup() {
 	Serial.print("max CPU usage");
 	Serial.println(AudioProcessorUsageMax());
 */
-
+/*
+	timerGraph.init();
+	timerGraph.setDelay(2);
+	timerGraph.start(Timer::LOOP);
+	printPreFilter.length(1);
+*/
 }
 
 void loop() {
@@ -401,6 +408,18 @@ void loop() {
 		Serial.println(AudioProcessorUsage());
 	}
 */
+/*
+	if(peakPreFilter.available()){
+		Serial.print("pre filter  :\t");
+		Serial.println(peakPreFilter.read());
+	}
+	if(peakPostFilter.available()){
+		Serial.print("post filter :\t");
+		Serial.println(peakPostFilter.read());
+	}
+*/
+
+//	if(timerGraph.update()) printPreFilter.trigger();
 }
 
 void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
@@ -683,7 +702,7 @@ void handleInternalPitchBend(uint8_t channel, int16_t bend){
 	if(function) handlePitchBendFunction();
 	int16_t bendAmount = (bend - PITCH_BEND_NEUTRAL) * PITCH_BEND_INTERNAL_TO_MIDI;
 	handlePitchBend(channel, bendAmount);
-	MIDI.sendPitchBend(bendAmount, 0);
+	usbMIDI.sendPitchBend(bendAmount, midiOutChannel);
 /*
 	Serial.print("pitch bend :");
 	Serial.println(bend);
