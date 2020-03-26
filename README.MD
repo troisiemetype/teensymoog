@@ -5,7 +5,7 @@
 ## What is it ?
 _Teensymoog_ is a synth, inspired by the legendary minimoog.
 
-It aims at looking and functionning as close as possible of the orinal, but using digital tools, namely Teensy and Arduino boards.
+It aims at looking and functioning as close as possible of the orinal, but using digital tools, namely Teensy and Arduino boards.
 
 It uses three boards, one Teensy 4.0 that handles the heavy computing (sound generation), and two Arduino Mega (chinese copies in a small form factor), that are used as "port expander", which read keys, switches and potentiometers and send their value on change to the Teensy.
 
@@ -45,7 +45,7 @@ The keyboard is smaller, 2 1/2 cotaves instead of 3 1/2 (or 30 keys instead of 4
 It has three oscillators, a mixer section with noise and feedback (post-filter output is re-fed to the mixer), a filter, two envelopes generator for filter and notes, a LFO, a pitchbend wheel and a modulation wheel.
 
 ### Oscillators
-Oscillators have each six waveforms to choose from, six requency range (or octave transposition) and osc. 2 & 3 can be detuned by +- 1 octave regarding the base note. Osc.3 can be disconnected from the keyboard control, and used as a drone.
+Oscillators have each six waveforms to choose from, six frequency range (or octave transposition) and osc. 2 & 3 can be detuned by +- 1 octave regarding the base note. Osc.3 can be disconnected from the keyboard control, and used as a drone.
 
 ### Noise
 There is one noise source, with pink and white noise.
@@ -56,7 +56,7 @@ The original minimoog has a external input mixer entry, so anything (guitar, ano
 Maybe external input will be implemented once, but I wanted this feedback.
 
 ### Mixer
-the mixer is copy-paste on the original minimoog : a potentiometer for each of the five channels, and a switch for rapid on / off.
+The mixer is copy-paste on the original minimoog : a potentiometer for each of the five channels, and a switch for rapid on / off.
 
 ### Filter
 The filter is (I believe) close from the minimoog one. Cutoff frequency and emphasis (resonance) are available. Their is an associated envelope generator that modulates the cutoff frequency. Their is also an addition compared to the minimoog : there is a knob to slide continuously from low pass to band pass, to high pass filter. It can also slide continuously from low pass to high pass, thus resulting in a band stop filter at mid-course. (see _functions_ above)
@@ -65,7 +65,7 @@ The filter is (I believe) close from the minimoog one. Cutoff frequency and emph
 There are two envelope generators : one for the filter, the other for the global sound shape. On the original minimoog, decay can be used (_via_ a switch) to add release to notes. On this one a knob is there for, so this is a classic ADSR envelope.
 
 ### LFO
-There is a LFO avialble, with continuous rate and waveform selection.
+There is a LFO available, with continuous rate and waveform selection.
 
 ### Modulation
 The modulation can be applied to oscillators and or filter, and is controlled by the modulation wheel. Four modulation sources can be used, and mix together. osc.3 or filter envelope can be mixed to noise or LFO.
@@ -91,7 +91,7 @@ In any case, ten notes are tracked, so when several key are pressed releasing a 
 This defines how a new note is played. If some keys are already pressed when a new note is played, it can retrigger the envelopes, or let them to their state. This can be turned on or off.
 
 #### Keyboard detune
-The original minimoog has a resistor ladder keyboard, wich implies small variations in tonality regarding a perfect pitch. This setting reproduce this by applying detune to each note and letting you choice : 
+The original minimoog has a resistor ladder keyboard, which implies small variations in tonality regarding a perfect pitch. This setting reproduce this by applying detune to each note and letting you choice : 
 1. off : perfect pitch for each key
 1. soft : lightly detuned, +-10% of a semitone
 1. medium : a bit more detuned, +-30%
