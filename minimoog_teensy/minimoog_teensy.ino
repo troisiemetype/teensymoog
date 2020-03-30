@@ -39,7 +39,7 @@
   * I2S LRCLK1										20
   * I2S BCLK1 										21
   *
-  * D+ & D- are also used to break the USB port to the rear panel
+  * There are provision on the rear panel for sustain and expression control, not implemented yet.
   */
 
 #include <Audio.h>
@@ -56,33 +56,56 @@
 #include "Timer.h"
 
 // constants
+
+// my pots never go full clockwise... :/ So this can be used to adapt their range.
+const uint16_t RESO = 1005;
+const uint16_t HALF_RESO = RESO / 2;
+
+// There is a function that handles and tracks the key presses. Here is the max.
+// It can me more, but whith ten fingers on a monophonic synth, I think this is enough !
 const uint8_t KEYTRACK_MAX = 10;
 
 // Mega1 sends midi note 0 for the lower note ; we offset it by for octave to get into the usefull range
 const uint8_t MIDI_OFFSET = 48;
-//const uint8_t MIDI_OFFSET = 0;
+// To be modified according to keybed used. It's actualy not used, and any note can be handled from MIDI in.
 const uint8_t NUM_KEYS = 30;
 
+// Octave range for oscillators and filter.
 const uint8_t MAX_OCTAVE = 10;
 const uint8_t FILTER_MAX_OCTAVE = 5;
 
-
+// The base for computing DC levels for keys, modulation, pitchbend, etc.
 const float NOTE_MIDI_0 = 8.1757989156434;
 const float NOTE_RATIO = 1.0594630943593;
-
 const float HALFTONE_TO_DC = (float)1 / (MAX_OCTAVE * 12);
 const float FILTER_HALFTONE_TO_DC = (float)1 / (FILTER_MAX_OCTAVE * 12);
 
+// Filter base frequency : the filter cutoff frequency varies around this value.
 const float FILTER_BASE_FREQUENCY = 440.0;
 const float FILTER_BASE_NOTE = (log(FILTER_BASE_FREQUENCY / NOTE_MIDI_0)) / (log(NOTE_RATIO));
+// This corresponds to the min and max values for the variable filter available in the Teensy Audio library,
+// which is used by the synth.
+/* Note about the state variable (Chamberlin) filter:
+ * 	This filter can self oscillate, if given a resonnance value of around 50000.
+ *	(and the library modified to accept such value ; the setter limits it to 5).
+ *	It gives a nice sounding, pure sinewave.
+ * 	Problem is, usefull range for varying resonnace is about what the bare library allows (from 0.7 to 5).
+ *	It would be nice to test some exponential course to enable both continuous resonance modification AND self-oscillation.
+ *	I've tried some modifications, but couldn't come to something usable.
+ */
+const float FILTER_MIN_Q = 0.7;
+const float FILTER_MAX_Q = 5;
+const float FILTER_DIV_Q = RESO / (FILTER_MAX_Q - FILTER_MIN_Q);
 
+// Max mixer value for eahc channel if we want to avoid clipping.
+// Value of 1 can be used, but induces distortion when more than one oscillator is used.
+// Feedback should have its own value. If MAX_MIX is one feedback is powerfull,
+// but with this value the difference with and without feedback is barrely noticeable.
 const float MAX_MIX = 0.32;
 
-// pots never go full clockwise... :/
-const uint16_t RESO = 1010;
-const uint16_t HALF_RESO = RESO / 2;
-
 // To be put in Mega1 sketch, so it sends a value on 14 bits.
+// Note : the pitchbend wheel poses problems on the other sketch. For now it will stay like that,
+// but there is room for improvement.
 //343 - 492 - 500 - 651
 const int16_t PITCH_BEND_MIN = 343;
 const int16_t PITCH_BEND_MAX = 651;
@@ -91,6 +114,7 @@ const int16_t PITCH_BEND_COURSE = PITCH_BEND_MAX - PITCH_BEND_MIN;
 const float PITCH_BEND_INTERNAL_TO_MIDI = 8192.0 / PITCH_BEND_COURSE;
 
 // Maximum attack, decay, release and glide time (in milliseconds)
+// These use an exponential course to have both fine-tune of low values and a great range.
 const float MAX_ATTACK_TIME = 10000;
 const float MAX_DECAY_TIME = 10000;
 const float MAX_RELEASE_TIME = 10000;
@@ -102,9 +126,12 @@ const uint16_t MOD_WHEEL_MAX = 666;
 const uint16_t MOD_WHEEL_NEUTRAL = MOD_WHEEL_MIN + (MOD_WHEEL_MAX - MOD_WHEEL_MIN) / 2;
 const uint16_t MOD_WHEEL_COURSE = MOD_WHEEL_MAX - MOD_WHEEL_MIN;
 */
+
+// Teensy can reset both Mega, if needed.
 const uint8_t MEGA1_RST = 2;
 const uint8_t MEGA2_RST = 18;
 
+// Addresses for settings storing in memory. It uses Arduino's EEPROM functions but is saved to RAM on Teensy 4.0.
 const uint16_t EE_BITCRUSH_ADD = 0;
 const uint16_t EE_KEYBOARD_MODE_ADD = 1;
 const uint16_t EE_MIDI_IN_CH_ADD = 2;
@@ -118,7 +145,7 @@ const uint16_t EE_MOD_WHEEL_FILTER_RANGE = 9;
 const uint16_t EE_DETUNE_TABLE_ADD = 20;
 
 // variables
-
+// Note : 
 uint8_t internalMidiChannel = 1;
 uint8_t midiInChannel = 1;
 uint8_t midiOutChannel = 1;
@@ -137,9 +164,13 @@ bool function = 0;
 bool oscMod = 0;
 bool decay = 0;
 
+// note : not used. It was intended to copy decay to release as on the orignal minimoog,
+// but a release pot is present here.
+// Anyway, the code is there, commented out, and there is a CC for it.
 float filterDecay = 0;
 float egDecay = 0;
 
+// Stores the current band value, for recall when the band mode is changed.
 int16_t filterBandValue = 0;
 
 uint8_t pitchBendRange = 3;
@@ -149,9 +180,15 @@ uint8_t modWheelFilterRange = 12;
 // Waveforms
 uint8_t waveforms[6] = {WAVEFORM_SINE, WAVEFORM_TRIANGLE, WAVEFORM_SAWTOOTH,
 						WAVEFORM_SAWTOOTH_REVERSE, WAVEFORM_SQUARE, WAVEFORM_PULSE};
-// detune table
+// detune table. For emulating resistor-ladder keybed and induce key detuning.
 float detuneTable[128];
 // keyTrack
+/*
+ * Note on keytrack : there are two "keytracks" on the synth.
+ *	One is the filter keytrack, that reflects the note being played on the filter's cutoff frequency.
+ *	The other (this one) is a system tracks key being pressed to send not according to note priority setting.
+ * A better name for one or the other should be found...
+ */
 uint8_t keyTrackIndex = 0;
 struct {
 	uint8_t key;
@@ -212,7 +249,7 @@ struct midiSettings : public midi::DefaultSettings{
 	static const long BaudRate = 115200;
 };
 
-// USB midi for sending and receiving to other device or computer.
+// USB midi for sending and receiving to and from other device or computer.
 MIDI_CREATE_DEFAULT_INSTANCE();
 // The ones we use on synth for internal communication between Mega and Teensy
 MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial1, midi1, midiSettings);
@@ -269,7 +306,6 @@ void setup() {
 	usbMIDI.setHandlePitchChange(handlePitchBend);
 	usbMIDI.begin();
 
-
 	AudioMemory(200);
 
 	// audio settings
@@ -290,7 +326,7 @@ void setup() {
 	ampPitchBend.gain(pitchBendRange * HALFTONE_TO_DC * 2);
 	ampModWheelOsc.gain(0.0);
 	ampModWheelFilter.gain(0.0);
-	ampPreFilter.gain(0.55);
+	ampPreFilter.gain(1.0);
 	ampModEg.gain(0.1);
 	ampOsc3Mod.gain(1);
 	masterVolume.gain(1.0);
@@ -327,6 +363,7 @@ void setup() {
 
 	globalMixer.gain(0, 1);
 	globalMixer.gain(1, 0);
+	globalMixer.gain(2, 1);
 
 	noiseMixer.gain(0, 1);
 	noiseMixer.gain(1, 0);
@@ -373,7 +410,7 @@ void setup() {
 	bitCrushOutput.bits(16);
 	bitCrushOutput.sampleRate(44100.0);
 
-	delay(1000);
+	delay(500);
 
 	digitalWrite(13, 0);
 	delay(200);
@@ -402,7 +439,7 @@ void setup() {
 	timerGraph.init();
 	timerGraph.setDelay(2);
 	timerGraph.start(Timer::LOOP);
-	printPreFilter.length(1);
+	printPostFilter.length(1);
 */
 }
 
@@ -421,26 +458,32 @@ void loop() {
 		Serial.print("pre filter  :\t");
 		Serial.println(peakPreFilter.read());
 	}
+*/
+/*
 	if(peakPostFilter.available()){
 		Serial.print("post filter :\t");
 		Serial.println(peakPostFilter.read());
 	}
 */
 
-//	if(timerGraph.update()) printPreFilter.trigger();
+//	if(timerGraph.update()) printPostFilter.trigger();
 }
 
+// handle note on. compute dc to waveforms, glide enveloppe triggering, etc.
 void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
 /*
 	Serial.print("playing :");
 	Serial.println(note);
 */
+	// Note tracking.
 	nowPlaying = note;
+	// Applying detune per key.
 	float fineTune = detuneTable[note] * detuneCoeff[detune];
 //	float duration = 1.0 + (float)glideEn * (float)glide * 3.75;
 	float duration = 1.0 + (float)glideEn * glide * MAX_GLIDE_TIME;
 	float level = ((float)note + 12 * transpose) * HALFTONE_TO_DC;
 	level += fineTune;
+	// filter level is for cutoff freqeuncy keytrack. It's computed anyway, but enable through the corresponding mixer.
 	float filterLevel = (((float)note - FILTER_BASE_NOTE) + (12 * transpose)) * FILTER_HALFTONE_TO_DC;
 	filterLevel += fineTune;
 
@@ -454,6 +497,7 @@ void noteOn(uint8_t note, uint8_t velocity, bool trigger = 1){
 	AudioInterrupts();
 }
 
+// Stop note.
 void noteOff(){
 	AudioNoInterrupts();
 	filterEnvelope.noteOff();
@@ -461,6 +505,8 @@ void noteOff(){
 	AudioInterrupts();
 }
 
+// Keytrack functions
+// This one check if the key is the lower one, or not, and returns the index of the lower one.
 int8_t keyTrackGetLower(uint8_t note){
 	uint8_t lower = 127;
 	int8_t lowerIndex = keyTrackIndex - 1;
@@ -480,6 +526,7 @@ int8_t keyTrackGetLower(uint8_t note){
 	return lowerIndex;
 }
 
+// Ditto upper key.
 int8_t keyTrackGetUpper(uint8_t note){
 	uint8_t upper = 0;
 	int8_t upperIndex = keyTrackIndex - 1;
@@ -499,6 +546,7 @@ int8_t keyTrackGetUpper(uint8_t note){
 	return upperIndex;
 }
 
+// Add a key to the keytrack table.
 int8_t keyTrackAdd(uint8_t note, uint8_t velocity){
 	// We only keep count of a limited quantity of notes !
 	if (keyTrackIndex >= KEYTRACK_MAX) return -1;
@@ -514,6 +562,7 @@ int8_t keyTrackAdd(uint8_t note, uint8_t velocity){
 	return keyTrackIndex++;
 }
 
+// remove a key that has been released on the keyboard, and reorder all that were pressed after.
 int8_t keyTrackRemove(uint8_t note){
 	int8_t update = -1;
 	for(uint8_t i = 0; i < keyTrackIndex; ++i){
@@ -539,6 +588,10 @@ int8_t keyTrackRemove(uint8_t note){
 	return update;
 }
 
+// Handle note on. Internal MIDI from Mega 1 lands here.
+// Dispatch to settings if the function switch is enable.
+// Apply the keyboard offset (Mega 1 has its first key corresponding to MIDI note 0)
+// Echo the offset note to usbMIDI out.
 void handleInternalNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 	if(function){
 		handleKeyboardFunction(note, 1);
@@ -548,6 +601,8 @@ void handleInternalNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 	handleNoteOn(channel, note + MIDI_OFFSET, velocity);
 }
 
+// Handle note ON. usbMIDI in lands here.
+// Define if the new note has to be played, according to notes already played and key priority.
 void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 /*
 	Serial.print("note ");
@@ -620,6 +675,9 @@ void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity){
 	}
 
 }
+
+// handle internal note off.
+// Apply offset from keyboard, echo to usb MIDI out.
 void handleInternalNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 	if(function){
 //		handleKeyboardFunction(note, 0);
@@ -629,6 +687,9 @@ void handleInternalNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 	handleNoteOff(channel, note + MIDI_OFFSET, velocity);
 }
 
+// Handle note off.
+// usbMIDI in lands here.
+// Manage note priority, i.e. stopping the note released and re-triggering the previous one if needed.
 void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 /*
 	Serial.print("note ");
@@ -706,6 +767,9 @@ void handleNoteOff(uint8_t channel, uint8_t note, uint8_t velocity){
 
 }
 
+// internal pitch bend from Mega 1.
+// Echo to usb MIDI out.
+// Still work to do here, as there is still this bug on Mega 1 side.
 void handleInternalPitchBend(uint8_t channel, int16_t bend){
 	if(function) handlePitchBendFunction();
 	int16_t bendAmount = (bend - PITCH_BEND_NEUTRAL) * PITCH_BEND_INTERNAL_TO_MIDI;
@@ -717,11 +781,15 @@ void handleInternalPitchBend(uint8_t channel, int16_t bend){
 */
 }
 
+// Pitch bend from usb MIDI in lands here.
 void handlePitchBend(uint8_t channel, int16_t bend){
 	dcPitchBend.amplitude(((float)bend) / 8190);
 	// neutral at -11 from u(bend - PITCH_BEND_NEUTRAL) * PITCH_BEND_INTERNAL_TO_MIDIp, -24 from down. :/
 }
 
+// Handle internal control changes, and probably some from outside
+// all notes off is the only one implemented for now from usb MIDI in.
+// Dispatch to settings when the function switch is on.
 void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 	if(function){
 		handleCCFunction(command, value);
@@ -731,6 +799,10 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 	Serial.print("control change ");
 	Serial.println(command);
 */
+
+	// Long value reconstruct the 14-bits value send with CC 0-31, associated to CC LSB 32-63.
+	// Ramp value is used for glide, attack, decay and release, which have exponential settings.
+	// Short times can be precisely set, but longer are available as well.
 	uint16_t longValue = 0;
 	float rampValue = 0;
 	if(command < 32){
@@ -760,6 +832,8 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 		Serial.println(value);		
 */
 	}
+
+	// The first 32 CC are empty, has we wait for the associated LSB CC to apply the whole value at once.
 	switch(command){
 		case CC_MOD_WHEEL:
 		// CC_1
@@ -920,11 +994,12 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 			break;
 		case CC_FILTER_EMPHASIS_LSB:
 		// CC_53
-			vcf.resonance(0.7 + (float)longValue / 237.90);
+			vcf.resonance(FILTER_MIN_Q + (float)longValue / FILTER_DIV_Q);
 			break;
 		case CC_FILTER_CONTOUR_LSB:
 		// CC_54
-			filterMixer.gain(1, (float)longValue / RESO);
+//			filterMixer.gain(1, (float)longValue / RESO);
+			filterMixer.gain(1, (float)(longValue - HALF_RESO) / RESO);
 			break;
 		case CC_FILTER_ATTACK_LSB:
 		// CC_55
@@ -1135,6 +1210,8 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 		case CC_LFO_SHAPE:
 		// CC_119
 			AudioNoInterrupts();
+			// LFO shape is centered around 0 (range from -1 to 1) when triangle (like a finger vibrato on a violin)
+			// Square is offset, ranging from 0 to 1, like a duo-tone siren.
 			if(value > 63){
 				lfoWaveform.begin(WAVEFORM_TRIANGLE);
 				lfoWaveform.offset(0.0);
@@ -1156,6 +1233,8 @@ void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 	}
 }
 
+// Handle key press when in function mode.
+// Select the function to be set, then apply and save to memory the new setting.
 void handleKeyboardFunction(uint8_t key, bool active){
 
 	//
@@ -1205,6 +1284,7 @@ void handleKeyboardFunction(uint8_t key, bool active){
 			break;
 	}
 
+// note : the EEPROM.put() function could probably be called just once, but not all settings share the same type.
 	switch(currentFunction){
 		case FUNCTION_KEYBOARD_MODE:
 			if(key > KEY_UPPER) return;
@@ -1237,6 +1317,8 @@ void handleKeyboardFunction(uint8_t key, bool active){
 			filterMode = (filterMode_t)key;
 			EEPROM.put(EE_FILTER_MODE, filterMode);
 			AudioNoInterrupts();
+			// This is the same as in the CC handle function.
+			// Could probably be a dedicate function called from both place.
 			if(filterMode == FILTER_BAND_PASS){
 				if(filterBandValue < HALF_RESO){
 					bandMixer.gain(0, ((float)HALF_RESO - (float)filterBandValue) / HALF_RESO);
@@ -1256,6 +1338,7 @@ void handleKeyboardFunction(uint8_t key, bool active){
 			break;			
 		case FUNCTION_MIDI_IN_CHANNEL:
 			// change (usb) midi in channel
+			// for memory : MIDI channels go from 1 to 16, hence the +1 offset.
 			if(key > 15)return;
 			midiInChannel = key + 1;
 			//MIDI.begin(midiInChannel);
@@ -1300,6 +1383,8 @@ void handlePitchBendFunction(){
 	currentFunction = FUNCTION_PITCH_BEND_RANGE;
 }
 
+// handle CC when in function mode
+// todo : use filter band mode control to set function in this mode, instead of keyboard.
 void handleCCFunction(uint8_t command, uint8_t value){
 	switch(command){
 		case CC_MOD_WHEEL:
@@ -1319,6 +1404,7 @@ void handleCCFunction(uint8_t command, uint8_t value){
 	}
 }
 
+// Compute a new detune table.
 void resetDetuneTable(){
 	uint16_t address = EE_DETUNE_TABLE_ADD;
 	randomSeed(millis());

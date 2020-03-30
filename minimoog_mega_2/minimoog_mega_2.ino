@@ -56,10 +56,19 @@
  *					RX1 from teensy					19
  */
 
+/*
+ * Note on switches : every switch is active low, using the internal pull-up resistor.
+ */
+
+/*
+ * Note : Mega 2 has less things to handle then the Mega 1, but main functions are the same.
+ * See Mega1.ino for more exhaustive comments on functions.
+ */
+
 // includes
-#include "MIDI.h"
-#include "PushButton.h"
-#include "ExpFilter.h"
+#include "MIDI.h"			// https://github.com/FortySevenEffects/arduino_midi_library
+#include "PushButton.h"		// https://github.com/troisiemetype/PushButton
+#include "ExpFilter.h"		// https://github.com/troisiemetype/expfilter
 
 #include "defs.h"
 
@@ -71,6 +80,7 @@ const uint8_t POT_FILTER_COEF = 20;
 // Note : pins are defined via tables, to improve code efficiency.
 // Digital pin definition
 
+// Only three digital pins are used, from 2 to 4. So this one is used as base to set the table in setup().
 const uint8_t PIN_FILTER_MOD = 2;
 /*
 const uint8_t PIN_KEYBOARD_CTRL_1 = 3;
@@ -128,6 +138,8 @@ void setup(){
 	}
 
 	// Run init sequence to debounce switches and filter pots, so it's running for stable values.
+	// This one causes a bug on Mega 1, that I don't understand.
+	// Here it works perfect, when the system powers up every control is updated to its current state.
 	uint32_t initEnd = millis() + 500;
 	while(millis() < initEnd){
 		for(uint8_t i = 0; i < NUM_SWITCHES; ++i){

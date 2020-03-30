@@ -70,15 +70,33 @@
  *					RX1 from teensy					19
  */
 
+/*
+ * Note on switches : every switch is active low, using the internal pull-up resistor.
+ * The keys are active low with internal pull-up too.
+ */
+/*
+ * Note on rotary selectors : the one I found are 12-positions selector, with a setting washer limiting their travel.
+ * Here six positions are used, but more or less could be used as well to suit one needs for different waveforms.
+ * They are wired with a resistor array between their pins, with ground on the first pin, +5V on the sixth pin,
+ * and a 510ohm resistor between first and second pin, second and third, etc.
+ * (five resistors total for a six-position switch)
+ */
+/*
+ * Note on transpose (octave) switch : I used a three position temporary switch (ON)-OFF-(ON),
+ * each of its (ON) pin mapped to a different digital input.
+ * They share the same MIDI control command, sending 0 for octave - and 127 for octave +.
+ * Two tact switches can be used instead of this three-position switch, without modification of the code.
+ */
+
 // includes
-#include "MIDI.h"
-#include "PushButton.h"
-#include "ExpFilter.h"
+#include "MIDI.h"			// https://github.com/FortySevenEffects/arduino_midi_library
+#include "PushButton.h"		// https://github.com/troisiemetype/PushButton
+#include "ExpFilter.h"		// https://github.com/troisiemetype/expfilter
 #include "defs.h"
 
 // Constants
 const uint8_t NUM_KEYS = 30;
-// const uint8_t MIDI_OFFSET = 48; // todo : move to teensy !
+// const uint8_t MIDI_OFFSET = 48; // moved to teensy !
 
 const uint8_t NUM_SWITCHES = 15;
 const uint8_t NUM_POTS = 16;
@@ -94,6 +112,12 @@ const uint8_t KEYS[NUM_KEYS] = {
 };
 
 PushButton keys[NUM_KEYS];
+
+/*
+ * For memory : pin definitions. Some have moved, I let them here in case it would be needed.
+ * They could be used to init switch and pots tables and make them more readable,
+ * but once they are set they are unlikely to be modified.
+ */
 /*
 const uint8_t PIN_MOD_MIX_1 = 2;
 const uint8_t PIN_MOD_MIX_2 = 3;
@@ -135,29 +159,42 @@ const uint8_t APIN_MIX_NOISE = A14;
 const uint8_t APIN_MIX_EXT = A15;
 */
 
+// Every pin is defined through tables grouped by category. Pots, switches, keys (above).
+// The main and setup loop can thus iterate the table to update every reanding easily.
 const uint8_t APIN[NUM_POTS] = {A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15};
 
 // Vars
+// storing the last reading
 uint16_t potState[NUM_POTS];
 
+// switches pinout. Every switch is active low, and uses the internal pull-up resistor of the Atmega chip.
 const uint8_t PIN[NUM_SWITCHES] = {3, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17, 14, 15, 16};
 
+// Deboucing is handled by the push button library, as well as key initialisation and reading.
 PushButton switches[NUM_SWITCHES];
+// ExpFilter "debounces" ADC readings, filter noise. The readings only change when the users efectively moves a pot.
 ExpFilter pots[NUM_POTS];
+// 
 uint8_t selectors[NUM_SELECTORS];
 
 // Keyboard
 bool keyState[NUM_KEYS];
 
 // Mixer
+// Mixer stores the values from potentiometers and switches, because switch turn channel on / off.
+// Depending of the switch position, the value from the potentiometer is to be sent or not,
+// and when turned on the potentiometer value has to be sent again.
 uint16_t mix[5];
 bool mixSw[5];
 
 // Misc
 uint8_t defaultVelocity = 64;
 
+// update flag for data request from Teensy.
 bool update = 0;
 
+// Internal communication between the three boards ca be faster then MIDI standard. They handle it well.
+// They could probably handle a baudrate of 250000 or 500000.
 struct midiSettings : public midi::DefaultSettings{
 //	static const bool UseRunningStatus = true;
 	static const long BaudRate = 115200;
@@ -254,6 +291,8 @@ void loop(){
 */
 }
 
+// This is equivalent to the map() function provided by Arduino.
+// For some reason it didn't work well, so I wrote this one, that also bounds the value.
 int32_t remap(int32_t value, int32_t lowerIn, int32_t upperIn, int32_t lowerOut, int32_t upperOut){
 	int32_t inRange = upperIn - lowerIn;
 	int32_t outRange = upperOut - lowerOut;
@@ -266,6 +305,9 @@ int32_t remap(int32_t value, int32_t lowerIn, int32_t upperIn, int32_t lowerOut,
 	return value;
 }
 
+// Send a 14-bits control change.
+// Control change from 0 to 31 are 14-bits long control change,
+// each one associated with a LSB CC command ranging from 32 to 63.
 void sendLongControlChange(uint8_t controlChange, uint16_t value, uint8_t channel = 1){
 	uint8_t valueHigh = value >> 7;
 	uint8_t valueLow = value & 0x7F;
@@ -273,6 +315,14 @@ void sendLongControlChange(uint8_t controlChange, uint16_t value, uint8_t channe
 	midi1.sendControlChange(controlChange + 32, valueLow, channel);
 }
 
+// Handle switch + potentiometer combo for mixer.
+/*
+ * Update is sent when :
+ * 		Switch is turned OFF : volume 0 is sent.
+ * 		Switch is turned ON : last potentiometer value is sent.
+ * 		Potentiomter is moved AND switch is on : current volume is sent.
+ * When potentiometer is moved but switch is OFF, current value is localy stored but not sent.
+ */
 void updateMix(uint8_t ch, bool fromSw = 0){
 	uint16_t value = 0;
 	if(mixSw[ch]){
@@ -345,6 +395,7 @@ void updateSwitches(){
 				break;
 			case 6:
 			// pin 8
+			// Mixer switches are handled by a dedicate function with pots.
 				mixSw[0] = (bool)change;
 				updateMix(0, 1);
 				continue;
@@ -425,6 +476,8 @@ void updateControls(){
 				midi1.sendPitchBend((int16_t)value, 1);
 				continue;
 			case 4:
+				// Mod wheel uses a standard 270° potentiometer, but its course is around 90°.
+				// The input value is then remaped to the standard MIDI 14-bits range.
 				controlChange = CC_MOD_WHEEL;
 				value = remap(value, 360, 660, 0, 16384);
 //				value = map(value, 360, 660, 0, 16384);
@@ -432,10 +485,13 @@ void updateControls(){
 				break;
 			case 5:
 				// rotary selector : value must be divided by ~170
+				// Selectors use resistor array, as explained at the begining of this file. 
+				// the divisions "re-maps" the 10-bits range of the ADC to the 0-6 range we need.
 				controlChange = CC_OSC1_RANGE;
 				value /= 170;
 				value = 5 - value;
 				// We have to check if the value after dividing is different from the previous one !
+				// Otherwise each selector change will send dozens of useless update !
 				if(value == selectors[0]){
 					continue;
 				} else {
@@ -490,7 +546,7 @@ void updateControls(){
 				}
 				break;
 			case 11:
-				// mix is to be sent only if switch is on.
+				// mix is to be sent only if switch is on, and is handled by a dedicated function (see above).
 //				controlChange = CC_OSC1_MIX;
 				mix[0] = value;
 				updateMix(0);
@@ -519,6 +575,7 @@ void updateControls(){
 				continue;
 		}
 
+		// See comment about 14-bits control change at the sendLongControlChange() function.
 		if( controlChange < 32){
 			sendLongControlChange(controlChange, value, 1);
 		} else {
@@ -527,6 +584,8 @@ void updateControls(){
 	}
 }
 
+// Handle requests from Teensy. For now, the only one needed is a global update.
+// Maybe it could be usefull to use the data byte to specify which kind of controls are to be updated.
 void handleControlChange(uint8_t channel, uint8_t command, uint8_t value){
 	switch(command){
 		case CC_ASK_FOR_DATA:

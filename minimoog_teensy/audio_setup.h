@@ -45,11 +45,11 @@ AudioAnalyzePeak         peakPreFilter;          //xy=2254.7498779296875,147.75
 AudioAnalyzePrint        printPreFilter;         //xy=2254.7498779296875,184.75001525878906
 AudioMixer4              bandMixer;      //xy=2363,392
 AudioEffectEnvelope      mainEnvelope;   //xy=2542,393
-AudioAnalyzePrint        printPostFilter;         //xy=2542.75,427.75
 AudioAnalyzePeak         peakPostFilter;          //xy=2542.75,462.75
+AudioAnalyzePrint        printPostFilter;         //xy=2545.7498779296875,430.75
 AudioEffectBitcrusher    bitCrushOutput; //xy=2778,390
 AudioAmplifier           masterVolume;   //xy=2971,389
-AudioOutputI2S           i2s;            //xy=3140,370
+AudioOutputI2S           i2s;            //xy=3142.9998779296875,389
 AudioConnection          patchCord1(dcFilterEnvelope, filterEnvelope);
 AudioConnection          patchCord2(dcOscTune, 0, mainTuneMixer, 1);
 AudioConnection          patchCord3(dcKeyTrack, 0, mainTuneMixer, 0);
@@ -103,4 +103,10 @@ AudioConnection          patchCord50(mainEnvelope, bitCrushOutput);
 AudioConnection          patchCord51(bitCrushOutput, masterVolume);
 AudioConnection          patchCord52(masterVolume, 0, i2s, 0);
 AudioConnection          patchCord53(masterVolume, 0, i2s, 1);
+// Sync connection
+//AudioConnection          patchCord54(osc1Waveform, 1, osc2Waveform, 2);
+//AudioConnection          patchCord55(osc1Waveform, 1, osc3Waveform, 2);
+// Sync connection  -end
+
+
 // GUItool: end automatically generated code
