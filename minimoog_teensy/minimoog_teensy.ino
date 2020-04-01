@@ -52,8 +52,8 @@
 #include "audio_setup.h"
 #include "defs.h"
 
-#include "MIDI.h"
-#include "Timer.h"
+#include "MIDI.h"					// https://github.com/troisiemetype/PushButton
+// #include "Timer.h"
 
 // constants
 
