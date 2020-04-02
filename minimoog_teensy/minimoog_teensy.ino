@@ -58,6 +58,9 @@
 // constants
 
 // my pots never go full clockwise... :/ So this can be used to adapt their range.
+// These two commented out values for testing with external midi triggering (like puredata).
+//const uint16_t RESO = 127;
+//const uint16_t RESO = 16383;
 const uint16_t RESO = 1005;
 const uint16_t HALF_RESO = RESO / 2;
 
@@ -304,6 +307,10 @@ void setup() {
 	usbMIDI.setHandleNoteOn(handleNoteOn);
 	usbMIDI.setHandleNoteOff(handleNoteOff);
 	usbMIDI.setHandlePitchChange(handlePitchBend);
+//	usbMIDI.setHandleNoteOn(handleInternalNoteOn);
+//	usbMIDI.setHandleNoteOff(handleInternalNoteOff);
+//	usbMIDI.setHandlePitchBend(handleInternalPitchBend);
+//	usbMIDI.setHandleControlChange(handleControlChange);
 	usbMIDI.begin();
 
 	AudioMemory(200);

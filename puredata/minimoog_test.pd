@@ -1,0 +1,3 @@
+#N canvas 127 99 1179 533 10;
+#X obj 85 24 minimoog_panel;
+#X obj 240 364 minimoog_keyboard;
