@@ -57,6 +57,8 @@
 
 // constants
 
+const int8_t MEMORY_ID = 0;
+
 // my pots never go full clockwise... :/ So this can be used to adapt their range.
 // These two commented out values for testing with external midi triggering (like puredata).
 //const uint16_t RESO = 127;
@@ -135,16 +137,17 @@ const uint8_t MEGA1_RST = 2;
 const uint8_t MEGA2_RST = 18;
 
 // Addresses for settings storing in memory. It uses Arduino's EEPROM functions but is saved to RAM on Teensy 4.0.
-const uint16_t EE_BITCRUSH_ADD = 0;
-const uint16_t EE_KEYBOARD_MODE_ADD = 1;
-const uint16_t EE_MIDI_IN_CH_ADD = 2;
-const uint16_t EE_MIDI_OUT_CH_ADD = 3;
-const uint16_t EE_TRIGGER_ADD = 4;
-const uint16_t EE_DETUNE_ADD = 5;
-const uint16_t EE_FILTER_MODE = 6;
-const uint16_t EE_PITCH_BEND_RANGE = 7;
-const uint16_t EE_MOD_WHEEL_OSC_RANGE = 8;
-const uint16_t EE_MOD_WHEEL_FILTER_RANGE = 9;
+const uint16_t EE_MEMORY_INIT = 0;
+const uint16_t EE_BITCRUSH_ADD = 3;
+const uint16_t EE_KEYBOARD_MODE_ADD = 4;
+const uint16_t EE_MIDI_IN_CH_ADD = 5;
+const uint16_t EE_MIDI_OUT_CH_ADD = 6;
+const uint16_t EE_TRIGGER_ADD = 7;
+const uint16_t EE_DETUNE_ADD = 8;
+const uint16_t EE_FILTER_MODE = 9;
+const uint16_t EE_PITCH_BEND_RANGE = 10;
+const uint16_t EE_MOD_WHEEL_OSC_RANGE = 11;
+const uint16_t EE_MOD_WHEEL_FILTER_RANGE = 12;
 const uint16_t EE_DETUNE_TABLE_ADD = 20;
 
 // variables
@@ -262,7 +265,77 @@ MIDI_CREATE_CUSTOM_INSTANCE(HardwareSerial, Serial4, midi2, midiSettings);
 // Timer timerCPU;
 // Timer timerGraph;
 
+void initMemory(){
+	uint16_t eeMemInit = EE_MEMORY_INIT;
+
+	// Set the first three slots as a "flag" that tells us that memory is viable.
+	EEPROM.write(eeMemInit++, 't');
+	EEPROM.write(eeMemInit++, 'm');
+	EEPROM.write(eeMemInit, MEMORY_ID);
+/*
+	Serial.println("memory init : ");
+	eeMemInit = EE_MEMORY_INIT;
+	for(uint8_t i = 0; i < 3; ++i){
+		Serial.println(EEPROM.read(eeMemInit++));
+	}
+*/
+
+	EEPROM.write(EE_BITCRUSH_ADD, bitCrushLevel);
+	EEPROM.write(EE_KEYBOARD_MODE_ADD, KEY_LAST);
+	EEPROM.write(EE_MIDI_IN_CH_ADD, midiInChannel);
+	EEPROM.write(EE_MIDI_OUT_CH_ADD, midiOutChannel);
+	EEPROM.write(EE_TRIGGER_ADD, noteRetrigger);
+	EEPROM.write(EE_DETUNE_ADD, DETUNE_OFF);
+	EEPROM.write(EE_FILTER_MODE, filterBandValue);
+	EEPROM.write(EE_PITCH_BEND_RANGE, pitchBendRange);
+	EEPROM.write(EE_MOD_WHEEL_OSC_RANGE, modWheelOscRange);
+	EEPROM.write(EE_MOD_WHEEL_FILTER_RANGE, modWheelFilterRange);
+
+	resetDetuneTable();
+}
+
+// Load the default values from settings
+// This starts by a check for proper memory initialisation.
+void loadMemory(){
+	int8_t mem[3];
+	uint16_t eeMemInit = EE_MEMORY_INIT;
+
+	// Check if the memory needs initialisation :
+	// first three slots are the letter 't' and 'm' (for TeensyMoog),
+	// plus an ID set at the top of this file, that should be changed whenever memory needs a reset.
+	// (i.e. when its mapping has been changed, or a setting has been added or removed, etc.)
+//	Serial.println("memory check : ");
+	for(uint8_t i = 0; i < 3; ++i){
+		EEPROM.get(eeMemInit++, mem[i]);
+//		Serial.println(mem[i]);
+	}
+
+	if((mem[0] != 't') || (mem[1] != 'm') || (mem[2] != MEMORY_ID)) initMemory();
+
+	// Getting the settings from "eeprom"
+	EEPROM.get(EE_BITCRUSH_ADD, bitCrushLevel);
+	EEPROM.get(EE_KEYBOARD_MODE_ADD, keyMode);
+	EEPROM.get(EE_MIDI_IN_CH_ADD, midiInChannel);
+	EEPROM.get(EE_MIDI_OUT_CH_ADD, midiOutChannel);
+	EEPROM.get(EE_TRIGGER_ADD, noteRetrigger);
+	EEPROM.get(EE_DETUNE_ADD, detune);
+	EEPROM.get(EE_FILTER_MODE, filterMode);
+	EEPROM.get(EE_PITCH_BEND_RANGE, pitchBendRange);
+	EEPROM.get(EE_MOD_WHEEL_OSC_RANGE, modWheelOscRange);
+	EEPROM.get(EE_MOD_WHEEL_FILTER_RANGE, modWheelFilterRange);
+
+	uint16_t address = EE_DETUNE_TABLE_ADD;
+	for(uint16_t i = 0; i < 128; ++i){
+		EEPROM.get(address, detuneTable[i]);
+		address += 4;
+	}
+
+}
+
 void setup() {
+
+//	while(!Serial);
+
 	pinMode(13, OUTPUT);
 	digitalWrite(13, 1);
 
@@ -287,22 +360,9 @@ void setup() {
 	Serial.begin(115200);
 	Serial.println("started...");
 */
-	// Getting the settings from "eeprom"
-	EEPROM.get(EE_BITCRUSH_ADD, bitCrushLevel);
-	EEPROM.get(EE_KEYBOARD_MODE_ADD, keyMode);
-	EEPROM.get(EE_MIDI_IN_CH_ADD, midiInChannel);
-	EEPROM.get(EE_MIDI_OUT_CH_ADD, midiOutChannel);
-	EEPROM.get(EE_TRIGGER_ADD, noteRetrigger);
-	EEPROM.get(EE_DETUNE_ADD, detune);
-	EEPROM.get(EE_FILTER_MODE, filterMode);
-	EEPROM.get(EE_MOD_WHEEL_OSC_RANGE, modWheelOscRange);
-	EEPROM.get(EE_MOD_WHEEL_FILTER_RANGE, modWheelFilterRange);
+	// recall the settings stored in permanent memory.
+	loadMemory();
 
-	uint16_t address = EE_DETUNE_TABLE_ADD;
-	for(uint16_t i = 0; i < 128; ++i){
-		EEPROM.get(address, detuneTable[i]);
-		address += 4;
-	}
 	// TODO : check how to receive and transmit on different channels.
 	usbMIDI.setHandleNoteOn(handleNoteOn);
 	usbMIDI.setHandleNoteOff(handleNoteOff);
