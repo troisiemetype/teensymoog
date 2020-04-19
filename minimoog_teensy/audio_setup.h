@@ -5,51 +5,51 @@
 #include <SerialFlash.h>
 
 // GUItool: begin automatically generated code
-AudioSynthWaveformDc     dcFilterEnvelope; //xy=91,497
-AudioSynthWaveformDc     dcOscTune;      //xy=150,106
-AudioSynthWaveformDc     dcKeyTrack;     //xy=153,70
-AudioSynthWaveformDc     dcPitchBend;    //xy=156,141
-AudioSynthWaveformDc     dcFilter;       //xy=258,552
-AudioSynthNoisePink      pinkNoise;      //xy=280,277
-AudioSynthWaveformDc     dcLfoFreq;      //xy=282,326
-AudioSynthNoiseWhite     whiteNoise;     //xy=283,241
-AudioEffectEnvelope      filterEnvelope; //xy=289,497
-AudioSynthWaveformDc     dcFilterKeyTrack; //xy=291,586
-AudioAmplifier           ampPitchBend;   //xy=329,141
-AudioMixer4              noiseMixer;     //xy=466,274
-AudioSynthWaveformModulated lfoWaveform;    //xy=471,326
-AudioAmplifier           ampOsc3Mod;     //xy=471,394
-AudioAmplifier           ampModEg;       //xy=481,432
-AudioMixer4              mainTuneMixer;  //xy=553,90
-AudioMixer4              modMix2;        //xy=677,427
-AudioMixer4              modMix1;        //xy=678,356
-AudioSynthWaveformDc     dcOsc3;         //xy=680,150
-AudioMixer4              osc3ControlMixer; //xy=855,156
-AudioMixer4              modMixer;       //xy=867,405
-AudioSynthWaveformDc     dcOsc2Tune;     //xy=1027,112
-AudioSynthWaveformDc     dcOsc3Tune;     //xy=1028,178
-AudioAmplifier           ampModWheelOsc;    //xy=1077,385
-AudioAmplifier           ampModWheelFilter;           //xy=1084.5666809082031,420.566650390625
-AudioMixer4              osc3TuneMixer;  //xy=1211,174
-AudioMixer4              osc2TuneMixer;  //xy=1212,110
-AudioSynthWaveformDc     dcPulse;        //xy=1228,22
-AudioSynthWaveformModulated osc1Waveform;   //xy=1445,71
-AudioSynthWaveformModulated osc2Waveform;   //xy=1446,108
-AudioSynthWaveformModulated osc3Waveform;   //xy=1446,145
-AudioMixer4              oscMixer;       //xy=1632,114
-AudioMixer4              globalMixer;    //xy=1841,161
-AudioAmplifier           ampPreFilter;   //xy=2005,160
-AudioMixer4              filterMixer;    //xy=2023,403
-AudioFilterStateVariable vcf;            //xy=2192,397
-AudioAnalyzePeak         peakPreFilter;          //xy=2254.7498779296875,147.75
-AudioAnalyzePrint        printPreFilter;         //xy=2254.7498779296875,184.75001525878906
-AudioMixer4              bandMixer;      //xy=2363,392
-AudioEffectEnvelope      mainEnvelope;   //xy=2542,393
-AudioAnalyzePeak         peakPostFilter;          //xy=2542.75,462.75
-AudioAnalyzePrint        printPostFilter;         //xy=2545.7498779296875,430.75
-AudioEffectBitcrusher    bitCrushOutput; //xy=2778,390
-AudioAmplifier           masterVolume;   //xy=2971,389
-AudioOutputI2S           i2s;            //xy=3142.9998779296875,389
+AudioSynthWaveformDc     dcFilterEnvelope; //xy=108.33332824707031,538
+AudioSynthWaveformDc     dcOscTune;      //xy=167.3333282470703,147
+AudioSynthWaveformDc     dcKeyTrack;     //xy=170.3333282470703,111
+AudioSynthWaveformDc     dcPitchBend;    //xy=173.3333282470703,182
+AudioSynthWaveformDc     dcFilter;       //xy=275.3333282470703,593
+AudioSynthNoisePink      pinkNoise;      //xy=297.3333282470703,318
+AudioSynthWaveformDc     dcLfoFreq;      //xy=299.3333282470703,367
+AudioSynthNoiseWhite     whiteNoise;     //xy=300.3333282470703,282
+AudioEffectEnvelope      filterEnvelope; //xy=306.3333282470703,538
+AudioSynthWaveformDc     dcFilterKeyTrack; //xy=308.3333282470703,627
+AudioAmplifier           ampPitchBend;   //xy=346.3333282470703,182
+AudioMixer4              noiseMixer;     //xy=483.3333282470703,315
+AudioSynthWaveformModulated lfoWaveform;    //xy=488.3333282470703,367
+AudioAmplifier           ampOsc3Mod;     //xy=488.3333282470703,435
+AudioAmplifier           ampModEg;       //xy=498.3333282470703,473
+AudioMixer4              mainTuneMixer;  //xy=570.3333282470703,131
+AudioMixer4              modMix2;        //xy=694.3333282470703,468
+AudioMixer4              modMix1;        //xy=695.3333282470703,397
+AudioSynthWaveformDc     dcOsc3;         //xy=697.3333282470703,191
+AudioMixer4              osc3ControlMixer; //xy=872.3333282470703,197
+AudioMixer4              modMixer;       //xy=884.3333282470703,446
+AudioSynthWaveformDc     dcOsc2Tune;     //xy=1044.3333282470703,153
+AudioSynthWaveformDc     dcOsc3Tune;     //xy=1045.3333282470703,219
+AudioAmplifier           ampModWheelOsc; //xy=1094.3333282470703,426
+AudioAmplifier           ampModWheelFilter; //xy=1101.3333282470703,461
+AudioMixer4              osc3TuneMixer;  //xy=1228.3333282470703,215
+AudioMixer4              osc2TuneMixer;  //xy=1229.3333282470703,151
+AudioSynthWaveformDc     dcPulse;        //xy=1245.3333282470703,63
+AudioSynthWaveformModulated osc1Waveform;   //xy=1462.3333282470703,112
+AudioSynthWaveformModulated osc2Waveform;   //xy=1463.3333282470703,149
+AudioSynthWaveformModulated osc3Waveform;   //xy=1463.3333282470703,186
+AudioMixer4              oscMixer;       //xy=1649.3333282470703,155
+AudioMixer4              globalMixer;    //xy=1858.3333282470703,202
+AudioAmplifier           ampPreFilter;   //xy=2022.3333282470703,201
+AudioMixer4              filterMixer;    //xy=2040.3333282470703,444
+AudioFilterStateVariable vcf;            //xy=2209.3333282470703,438
+AudioAnalyzePeak         peakPreFilter;  //xy=2271.3333282470703,188
+AudioAnalyzePrint        printPreFilter; //xy=2271.3333282470703,225
+AudioMixer4              bandMixer;      //xy=2380.3333282470703,433
+AudioEffectEnvelope      mainEnvelope;   //xy=2559.3333282470703,434
+AudioAnalyzePeak         peakPostFilter; //xy=2559.3333282470703,503
+AudioAnalyzePrint        printPostFilter; //xy=2562.3333282470703,471
+AudioEffectBitcrusher    bitCrushOutput; //xy=2795.3333282470703,431
+AudioAmplifier           masterVolume;   //xy=2988.3333282470703,430
+AudioOutputI2S           i2s;            //xy=3159.3333282470703,430
 AudioConnection          patchCord1(dcFilterEnvelope, filterEnvelope);
 AudioConnection          patchCord2(dcOscTune, 0, mainTuneMixer, 1);
 AudioConnection          patchCord3(dcKeyTrack, 0, mainTuneMixer, 0);
@@ -103,6 +103,19 @@ AudioConnection          patchCord50(mainEnvelope, bitCrushOutput);
 AudioConnection          patchCord51(bitCrushOutput, masterVolume);
 AudioConnection          patchCord52(masterVolume, 0, i2s, 0);
 AudioConnection          patchCord53(masterVolume, 0, i2s, 1);
+
+// for debug purpose, uncomment to test audio with internal DAC, or USB.
+
+// on board DAC may need a decoupling capacitor (10uF is a safe value)
+// AudioOutputAnalog        dac1;           //xy=3166.3333282470703,501.3333282470703
+// AudioConnection          patchCord54(masterVolume, dac1);
+
+// USB needs the sketch to be compiled with USB type set to audio, MIDI + audio or MIDI + serial + audio in the IDE
+// AudioOutputUSB           usb1;           //xy=3159.3333740234375,363.3333435058594
+// AudioConnection          patchCord55(masterVolume, 0, usb1, 0);
+// AudioConnection          patchCord56(masterVolume, 0, usb1, 1);
+
+
 // Sync connection
 //AudioConnection          patchCord54(osc1Waveform, 1, osc2Waveform, 2);
 //AudioConnection          patchCord55(osc1Waveform, 1, osc3Waveform, 2);
